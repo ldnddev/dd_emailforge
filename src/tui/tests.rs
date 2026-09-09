@@ -930,3 +930,139 @@ fn footer_medium_mentions_insert() {
         "{hint}"
     );
 }
+
+fn app_with_mj_text_form() -> App {
+    let mut app = app_with_one_column();
+    let col = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-column"))
+        .expect("column row");
+    app.selected_row = col;
+    app.insert_kind(super::component_kind::ComponentKind::MjText);
+    let text = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-text"))
+        .expect("mj-text row");
+    app.selected_row = text;
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+    assert_eq!(form_state(&app).focused().map(|f| f.id), Some("content"));
+    app
+}
+
+fn mj_text_content(app: &App) -> String {
+    let crate::model::BodyNode::MjSection(s) = &app.template.as_ref().unwrap().body.nodes[0] else {
+        panic!("expected mj-section");
+    };
+    let crate::model::SectionChild::MjColumn(col) = &s.children[0] else {
+        panic!("expected column");
+    };
+    match &col.components[0] {
+        crate::model::ColumnChild::MjText(t) => t.content.clone(),
+        other => panic!("expected mj-text, got {other:?}"),
+    }
+}
+
+#[test]
+fn textarea_expand_ctrl_e_opens_and_esc_returns_to_form() {
+    let mut app = app_with_mj_text_form();
+    send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+    assert!(app.form_textarea_expanded);
+    assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+
+    send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(!app.form_textarea_expanded);
+    assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+    assert_eq!(form_state(&app).focused().map(|f| f.id), Some("content"));
+}
+
+#[test]
+fn textarea_expand_ctrl_e_on_non_textarea_is_noop() {
+    let mut app = app_with_template();
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(form_state(&app).form.fields[0].id, "subject");
+    send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+    assert!(!app.form_textarea_expanded);
+    assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+}
+
+#[test]
+fn textarea_expand_esc_from_form_still_closes() {
+    let mut app = app_with_mj_text_form();
+    send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(app.modal.is_none());
+    assert!(!app.form_textarea_expanded);
+}
+
+#[test]
+fn textarea_expand_edits_then_save_commits_copy() {
+    let mut app = app_with_mj_text_form();
+    send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+    assert!(app.form_textarea_expanded);
+    send_key(&mut app, KeyCode::Char('Z'), KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(!app.form_textarea_expanded);
+    assert!(form_state(&app).get("content").ends_with('Z'));
+    send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+    assert!(app.modal.is_none());
+    assert!(mj_text_content(&app).ends_with('Z'));
+}
+
+#[test]
+fn textarea_expand_ctrl_s_saves_from_expanded_view() {
+    let mut app = app_with_mj_text_form();
+    send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+    send_key(&mut app, KeyCode::Char('Q'), KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+    assert!(app.modal.is_none());
+    assert!(!app.form_textarea_expanded);
+    assert!(mj_text_content(&app).ends_with('Q'));
+}
+
+#[test]
+fn textarea_expand_tab_does_not_leave_field() {
+    let mut app = app_with_mj_text_form();
+    send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+    send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+    assert!(app.form_textarea_expanded);
+    assert_eq!(form_state(&app).focused().map(|f| f.id), Some("content"));
+}
+
+#[test]
+fn textarea_expand_click_opens_from_hit_target() {
+    let mut app = app_with_mj_text_form();
+    let copy_idx = form_state(&app)
+        .form
+        .fields
+        .iter()
+        .position(|f| f.id == "content")
+        .expect("content field");
+    app.form_expand_hits.borrow_mut().push((
+        copy_idx,
+        Rect {
+            x: 40,
+            y: 10,
+            width: 8,
+            height: 1,
+        },
+    ));
+    send_mouse(&mut app, MouseEventKind::Down(MouseButton::Left), 42, 10);
+    assert!(app.form_textarea_expanded);
+    assert_eq!(form_state(&app).focused().map(|f| f.id), Some("content"));
+}
+
+#[test]
+fn f1_from_expanded_textarea_keeps_form() {
+    let mut app = app_with_mj_text_form();
+    send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+    send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+    assert!(app.show_help);
+    assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+    assert!(app.form_textarea_expanded);
+    send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(!app.show_help);
+    assert!(app.form_textarea_expanded);
+    assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+}

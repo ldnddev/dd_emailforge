@@ -45,6 +45,12 @@ fields:
     type: string
     hint: "1-4 values with px or %"
     maps_to: "mj-hero padding"
+  - id: inner_padding
+    required: false
+    type: string
+    hint: "1-4 values with px or %"
+    example: "12px 24px"
+    maps_to: "mj-hero inner-padding"
   - id: border_radius
     required: false
     type: string

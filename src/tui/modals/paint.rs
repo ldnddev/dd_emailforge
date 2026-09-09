@@ -194,6 +194,12 @@ impl App {
         use crate::tui::editform;
         use crate::tui::form_textarea::*;
 
+        self.form_expand_hits.borrow_mut().clear();
+        if self.form_textarea_expanded {
+            self.render_textarea_expand_modal(frame, state, cursor_pos);
+            return;
+        }
+
         let area = centered_rect(70, 80, frame.area());
         frame.render_widget(Clear, area);
         let outer = Block::default()
@@ -213,11 +219,17 @@ impl App {
         }
 
         let help_rect = Rect::new(inner.x, inner.y, inner.width, 1);
+        let focused_is_textarea = matches!(
+            state.form.fields.get(state.focused_field).map(|f| &f.kind),
+            Some(editform::FieldKind::Textarea { .. })
+        );
+        let help_text = if focused_is_textarea {
+            "Tab/Up/Down: navigate  |  Ctrl+E: expand  |  Ctrl+S: save  |  Esc: cancel"
+        } else {
+            "Tab/Up/Down: navigate  |  ←/→: cycle enum  |  Ctrl+S: save  |  Esc: cancel"
+        };
         frame.render_widget(
-            Paragraph::new(
-                "Tab/Up/Down: navigate  |  ←/→: cycle enum  |  Ctrl+S: save  |  Esc: cancel",
-            )
-            .style(
+            Paragraph::new(help_text).style(
                 Style::default()
                     .fg(self.theme.modal_labels)
                     .bg(self.theme.modal_background)
@@ -323,7 +335,47 @@ impl App {
                             .bg(self.theme.modal_background),
                     ));
                 }
-                frame.render_widget(Paragraph::new(Line::from(label_spans)), label_rect);
+                let is_textarea = matches!(field.kind, editform::FieldKind::Textarea { .. });
+                let expand = "[Expand]";
+                let expand_len = expand.len() as u16;
+                if is_textarea && content_rect.width > expand_len + 2 {
+                    let expand_x = content_rect
+                        .x
+                        .saturating_add(content_rect.width.saturating_sub(expand_len));
+                    let label_width = content_rect.width.saturating_sub(expand_len + 1);
+                    frame.render_widget(
+                        Paragraph::new(Line::from(label_spans)),
+                        Rect {
+                            width: label_width,
+                            ..label_rect
+                        },
+                    );
+                    frame.render_widget(
+                        Paragraph::new(expand).style(
+                            Style::default()
+                                .fg(self.theme.modal_labels)
+                                .bg(self.theme.modal_background)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Rect {
+                            x: expand_x,
+                            y: label_rect.y,
+                            width: expand_len,
+                            height: 1,
+                        },
+                    );
+                    self.form_expand_hits.borrow_mut().push((
+                        slot.idx,
+                        Rect {
+                            x: expand_x,
+                            y: label_rect.y,
+                            width: expand_len,
+                            height: 1,
+                        },
+                    ));
+                } else {
+                    frame.render_widget(Paragraph::new(Line::from(label_spans)), label_rect);
+                }
             }
             if box_top_screen >= 0 && box_top_screen < content_height as i32 {
                 let border_color = if focused {
@@ -401,6 +453,70 @@ impl App {
                 );
             }
         }
+    }
+
+    fn render_textarea_expand_modal(
+        &self,
+        frame: &mut ratatui::Frame,
+        state: &crate::tui::editform::EditFormState,
+        cursor_pos: usize,
+    ) {
+        let Some(field) = state.form.fields.get(state.focused_field) else {
+            return;
+        };
+        let area = centered_rect(94, 90, frame.area());
+        frame.render_widget(Clear, area);
+        let outer = Block::default()
+            .title(format!(" {} — expanded ", field.label))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.border_active))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.modal_header)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .style(Style::default().bg(self.theme.modal_background));
+        let inner = outer.inner(area);
+        frame.render_widget(outer, area);
+        if inner.height < 4 || inner.width < 8 {
+            return;
+        }
+
+        let help_rect = Rect::new(inner.x, inner.y, inner.width, 1);
+        frame.render_widget(
+            Paragraph::new("Esc: back to form  |  Ctrl+S: save  |  Enter: newline").style(
+                Style::default()
+                    .fg(self.theme.modal_labels)
+                    .bg(self.theme.modal_background)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            help_rect,
+        );
+
+        let box_rect = Rect::new(
+            inner.x,
+            inner.y.saturating_add(2),
+            inner.width,
+            inner.height.saturating_sub(2),
+        );
+        if box_rect.height < 3 {
+            return;
+        }
+        let field_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(
+                Style::default()
+                    .fg(self.theme.input_border_focus)
+                    .bg(self.theme.modal_background),
+            )
+            .style(Style::default().bg(self.theme.modal_background));
+        let inner_rect = field_block.inner(box_rect);
+        frame.render_widget(field_block, box_rect);
+        self.form_field_areas.borrow_mut().clear();
+        self.form_field_areas
+            .borrow_mut()
+            .push((box_rect, state.focused_field));
+        self.render_form_field_value(frame, field, state, cursor_pos, true, inner_rect);
     }
 
     fn render_form_field_value(

@@ -162,6 +162,11 @@ pub(super) struct App {
     details_hit_areas: Vec<(Rect, tree::TreeId)>,
     details_sync_id: Option<tree::TreeId>,
     paused_form_edit_modal: Option<Modal>,
+    /// When true, FormEdit paints the focused textarea full-size. Esc
+    /// returns to the compact form; Ctrl+S still saves the component.
+    form_textarea_expanded: bool,
+    /// Draw-time hit targets for `[Expand]` on textarea field labels.
+    form_expand_hits: RefCell<Vec<(usize, Rect)>>,
 }
 
 impl App {
@@ -213,6 +218,8 @@ impl App {
             details_hit_areas: Vec::new(),
             details_sync_id: None,
             paused_form_edit_modal: None,
+            form_textarea_expanded: false,
+            form_expand_hits: RefCell::new(Vec::new()),
         }
     }
 

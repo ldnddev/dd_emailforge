@@ -462,6 +462,7 @@ fn hero_to_form(h: &MjHero) -> EditFormState {
     st.set("width", opt_get(&h.width));
     st.set("height", opt_get(&h.height));
     st.set("padding", opt_get(&h.padding));
+    st.set("inner_padding", opt_get(&h.inner_padding));
     st.set("border_radius", opt_get(&h.border_radius));
     st.set("vertical_align", opt_get(&h.vertical_align));
     st.set("css_class", opt_get(&h.css_class));
@@ -478,6 +479,7 @@ fn apply_hero(h: &mut MjHero, state: &EditFormState) -> Result<()> {
     h.width = opt_set(state, "width");
     h.height = opt_set(state, "height");
     h.padding = opt_set_padding(state)?;
+    h.inner_padding = opt_set_named_padding(state, "inner_padding")?;
     h.border_radius = opt_set_unit(state, "border_radius")?;
     h.vertical_align = opt_set(state, "vertical_align");
     h.css_class = opt_set(state, "css_class");

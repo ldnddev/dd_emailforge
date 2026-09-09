@@ -4,14 +4,15 @@ version: 1
 node_scope: column_child
 insert:
   defaults:
-    content: "<table><tr><td></td></tr></table>"
+    content: "<tr><td></td></tr>"
 fields:
   - id: content
     required: true
     type: string
     ui:
       control: textarea
-    maps_to: "mj-table inner — single <table>…</table> fragment"
+      hint: "Rows only (<tr>/<td>/<th>). mj-table already emits <table>."
+    maps_to: "mj-table inner — <tr>…</tr> rows (no wrapping <table>)"
   - id: font_size
     required: false
     type: string

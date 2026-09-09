@@ -13,6 +13,10 @@ pub enum EmitMode {
     Export,
 }
 
+/// Written on `<mj-button>` in `mj-attributes`. MJML subtracts this from a
+/// pixel `width` when sizing the inner `<a>`, so keep it in sync with validate.
+pub const BRAND_BUTTON_INNER_PADDING: &str = "12px 24px";
+
 pub fn emit_mjml(t: &Template, mode: EmitMode) -> anyhow::Result<String> {
     let mut w = Writer::new();
     let mut mjml_attrs = vec![("lang", xml_escape_attr(&t.lang))];
@@ -116,7 +120,7 @@ fn emit_attributes(w: &mut Writer, t: &Template) {
             ),
             ("color", xml_escape_attr(&t.brand.button_color)),
             ("border-radius", "4px".into()),
-            ("inner-padding", "12px 24px".into()),
+            ("inner-padding", BRAND_BUTTON_INNER_PADDING.into()),
             ("font-weight", "bold".into()),
         ],
     );
@@ -351,6 +355,7 @@ fn emit_hero(w: &mut Writer, t: &Template, mode: &EmitMode, h: &MjHero) -> anyho
     push_opt(&mut attrs, "width", h.width.as_deref());
     push_opt(&mut attrs, "height", h.height.as_deref());
     push_padding(&mut attrs, h.padding.as_deref());
+    push_padding_named(&mut attrs, "inner-padding", h.inner_padding.as_deref());
     push_unit(&mut attrs, "border-radius", h.border_radius.as_deref());
     push_opt(&mut attrs, "vertical-align", h.vertical_align.as_deref());
     push_opt(&mut attrs, "css-class", h.css_class.as_deref());
@@ -1000,8 +1005,9 @@ fn push_padding_named(
     value: Option<&str>,
 ) {
     if let Some(v) = value.map(str::trim).filter(|s| !s.is_empty()) {
-        let out = crate::padding::normalize_padding(v).unwrap_or_else(|_| v.to_string());
-        attrs.push((key, xml_escape_attr(&out)));
+        if let Ok(out) = crate::padding::normalize_padding(v) {
+            attrs.push((key, xml_escape_attr(&out)));
+        }
     }
 }
 
@@ -1318,8 +1324,9 @@ mod tests {
     use super::*;
     use crate::model::{
         BodyNode, ColumnChild, EmailArticle, EmailCta, EmailFooter, EmailHeader, EmailHero,
-        HeroMode, ImagePosition, MjColumn, MjGroup, MjHero, MjSection, MjSocial, MjSocialElement,
-        MjTable, MjText, MjWrapper, SectionChild, SocialNetwork, Template, WebFont,
+        HeroMode, ImagePosition, MjButton, MjColumn, MjGroup, MjHero, MjSection, MjSocial,
+        MjSocialElement, MjTable, MjText, MjWrapper, SectionChild, SocialNetwork, Template,
+        WebFont,
     };
 
     fn export(t: &Template) -> String {
@@ -1508,6 +1515,65 @@ mod tests {
     }
 
     #[test]
+    fn inner_padding_emits_on_button_social_and_hero() {
+        let mut t = Template::minimal();
+        t.preheader.clear();
+        t.body.nodes.push(BodyNode::MjHero(MjHero {
+            inner_padding: Some("8px 16px".into()),
+            children: vec![ColumnChild::MjButton(MjButton {
+                content: "Go".into(),
+                href: "https://example.com".into(),
+                inner_padding: Some("6px 12px".into()),
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        t.body.nodes.push(BodyNode::MjSection(MjSection {
+            children: vec![SectionChild::MjColumn(MjColumn {
+                components: vec![ColumnChild::MjSocial(MjSocial {
+                    inner_padding: Some("4px".into()),
+                    ..Default::default()
+                })],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        let mjml = export(&t);
+        assert!(mjml.contains(r#"inner-padding="8px 16px""#), "{mjml}");
+        assert!(mjml.contains(r#"inner-padding="6px 12px""#), "{mjml}");
+        assert!(mjml.contains(r#"inner-padding="4px""#), "{mjml}");
+        assert!(mjml.contains("<mj-hero"), "{mjml}");
+        assert!(mjml.contains("<mj-social"), "{mjml}");
+        assert!(mjml.contains("<mj-button"), "{mjml}");
+    }
+
+    #[test]
+    fn illegal_inner_padding_is_omitted_from_emit() {
+        let mut t = Template::minimal();
+        t.preheader.clear();
+        t.body.nodes.push(BodyNode::MjSection(MjSection {
+            children: vec![SectionChild::MjColumn(MjColumn {
+                components: vec![ColumnChild::MjButton(MjButton {
+                    content: "Go".into(),
+                    href: "https://example.com".into(),
+                    inner_padding: Some("-2px".into()),
+                    padding: Some("10em".into()),
+                    ..Default::default()
+                })],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        let mjml = export(&t);
+        assert!(!mjml.contains(r#"inner-padding="-2px""#), "{mjml}");
+        assert!(!mjml.contains(r#"padding="10em""#), "{mjml}");
+        assert!(
+            mjml.contains(r#"inner-padding="12px 24px""#),
+            "brand default still present\n{mjml}"
+        );
+    }
+
+    #[test]
     fn p2_completeness_attrs_emit_when_set() {
         let mut t = Template::minimal();
         t.preheader.clear();
@@ -1533,7 +1599,7 @@ mod tests {
                         ..Default::default()
                     }),
                     ColumnChild::MjTable(MjTable {
-                        content: "<table><tr><td>1</td></tr></table>".into(),
+                        content: "<tr><td>1</td></tr>".into(),
                         cellpadding: Some("4".into()),
                         role: Some("presentation".into()),
                         ..Default::default()
@@ -1551,6 +1617,11 @@ mod tests {
         assert!(mjml.contains(r#"rel="noopener""#), "{mjml}");
         assert!(mjml.contains(r#"cellpadding="4""#), "{mjml}");
         assert!(mjml.contains(r#"role="presentation""#), "{mjml}");
+        assert!(mjml.contains("<tr><td>1</td></tr>"), "{mjml}");
+        assert!(
+            !mjml.contains("<table><tr><td>1</td></tr></table>"),
+            "mj-table must not wrap a nested <table>\n{mjml}"
+        );
     }
 
     #[test]
@@ -1688,6 +1759,7 @@ mod tests {
             "<mj-divider",
             "<mj-spacer",
             "<mj-table",
+            "<tr><td>1</td></tr>",
             "<mj-navbar",
             "hamburger=\"hamburger\"",
             "<mj-navbar-link",
@@ -1808,7 +1880,7 @@ mod tests {
                                     ..Default::default()
                                 }),
                                 ColumnChild::MjTable(MjTable {
-                                    content: "<table><tr><td>1</td></tr></table>".into(),
+                                    content: "<tr><td>1</td></tr>".into(),
                                     font_size: None,
                                     color: None,
                                     padding: None,

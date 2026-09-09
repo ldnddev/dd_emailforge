@@ -8,7 +8,7 @@
       <mj-all font-family="Raleway, Arial, Helvetica, sans-serif" />
       <mj-text color="#1a1a1a" font-size="16px" line-height="1.5" />
       <mj-button background-color="#FFAF46" color="#0F1114" border-radius="4px" inner-padding="12px 24px" font-weight="bold" />
-      <mj-body background-color="#f4f4f4" width="600px" />
+      <mj-body background-color="#ffffff" width="600px" />
       <mj-section padding="20px 0" />
       <mj-image padding="0" />
     </mj-attributes>
@@ -16,55 +16,17 @@
       .preheader { display:none !important; visibility:hidden; opacity:0; color:transparent; height:0; width:0; }
     </mj-style>
   </mj-head>
-  <mj-body background-color="#f4f4f4" width="600px">
+  <mj-body background-color="#ffffff" width="600px">
     <mj-section css-class="preheader" padding="0">
       <mj-column>
         <mj-text>Here's what happens next.</mj-text>
       </mj-column>
     </mj-section>
     <mj-section>
-      <mj-column>
-        <mj-image src="https://dummyimage.com/320x80/0F1114/FFAF46" alt="Logo" width="160px" align="left" href="https://example.com" />
-      </mj-column>
-    </mj-section>
-    <mj-section>
       <mj-column width="100%">
-      </mj-column>
-    </mj-section>
-    <mj-section background-color="#ffffff">
-      <mj-column>
-        <mj-image src="https://dummyimage.com/600x240/0F1114/FFAF46" alt="You're in." />
-        <mj-text font-size="28px" font-weight="bold">
-          You're in.
-        </mj-text>
-        <mj-text color="#1a1a1a">
-          Thanks for joining us.
-        </mj-text>
-      </mj-column>
-    </mj-section>
-    <mj-section>
-      <mj-column width="50%">
-        <mj-text>
-          What you get: a weekly note, no spam.
-        </mj-text>
-      </mj-column>
-      <mj-column width="50%">
-        <mj-text>
-          What we need: nothing else. You're set.
-        </mj-text>
-      </mj-column>
-    </mj-section>
-    <mj-section>
-      <mj-column>
-        <mj-text font-size="22px" font-weight="bold">
-          Start here
-        </mj-text>
-        <mj-text>
-          Open the app and pick a template.
-        </mj-text>
-        <mj-button href="https://example.com">
-          Open the app
-        </mj-button>
+        <mj-table font-size="14px" font-family="Arial" color="#000000" align="left" width="100%" border="1px solid #000000" padding="2%" cellpadding="1" cellspacing="2" role="none" css-class="table-class">
+          <tr><td>this is a table entry inside a column.</td></tr>
+        </mj-table>
       </mj-column>
     </mj-section>
     <mj-section>
@@ -73,6 +35,16 @@
         <mj-text font-size="12px" align="center" color="#1a1a1a">
           Example Co<br />123 Main St<br />Springfield, IL 62701<br /><a href="*|UNSUB|*">Unsubscribe</a><br />© Example Co
         </mj-text>
+      </mj-column>
+    </mj-section>
+    <mj-section>
+      <mj-column width="100%">
+        <mj-table>
+          <tr><td></td></tr>
+        </mj-table>
+        <mj-button href="https://example.com" background-color="#101010" color="#ffffff" align="center" font-family="Arial" font-size="22px" font-weight="bold" font-style="normal" border="1px solid #ff0000" border-radius="12px" width="200px" target="_blank" padding="2px" line-height="100%" text-decoration="underline" text-transform="uppercase">
+          Read more
+        </mj-button>
       </mj-column>
     </mj-section>
   </mj-body>

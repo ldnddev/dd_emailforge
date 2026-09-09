@@ -74,7 +74,7 @@ fields:
     type: string
     hint: "1-4 values with px or %"
     example: "12px 24px"
-    maps_to: "mj-button inner-padding (omit → brand default 12px 24px)"
+    maps_to: "mj-button inner-padding (omit → brand default 12px 24px). With a px width, left+right must leave room inside the button or MJML emits width:0."
   - id: width
     required: false
     type: string

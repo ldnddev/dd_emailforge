@@ -50,7 +50,7 @@ A directory argument means `dir/template.json`. `init` does **not** run `npm ins
 
 `Template` → `brand` + `head` + `body.nodes`. Nodes are internally tagged kebab-case (`email-header`, `mj-section`, …). Nested enums are kebab-case (`fluid-height`, `horizontal`, `top`, JSON `"x"` for Twitter, `hidden` for carousel thumbnails).
 
-Insert is parent-scoped: `mj-section` children are `mj-column` / `mj-group` (leaves splice into the last column). `mj-column` / `mj-hero` take `ColumnChild` (`mj-text` … `mj-navbar` / `mj-accordion` / `mj-carousel`). `mj-navbar-link` only under `mj-navbar`; `mj-accordion-element` only under `mj-accordion`; `mj-carousel-image` only under `mj-carousel`. `mj-wrapper` is `mj-section` / `mj-hero`. Email-* blocks are body-level only.
+Insert is parent-scoped: `mj-section` children are `mj-column` / `mj-group` (leaves splice into the last column). `mj-column` / `mj-hero` take `ColumnChild` (`mj-text` … `mj-navbar` / `mj-accordion` / `mj-carousel`). `mj-navbar-link` only under `mj-navbar`; `mj-accordion-element` only under `mj-accordion`; `mj-carousel-image` only under `mj-carousel`. `mj-wrapper` is `mj-section` / `mj-hero`. Email-* blocks are body-level only. `mj-table.content` is row markup (`<tr>` / `<td>` / `<th>`), not a wrapping `<table>` — `mj-table` already emits one. `inner-padding` is legal on `mj-button`, `mj-social`, and `mj-hero`. On `mj-button`, a pixel `width` smaller than inner-padding left+right (+ border) is a validate error — MJML would collapse the button to 0px.
 
 New fields take `#[serde(default)]`. Unknown JSON `version` is refused at load (exit 2). Never silently coerce `version: 2`.
 

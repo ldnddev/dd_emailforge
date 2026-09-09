@@ -10,6 +10,8 @@ pub const UNIT_RULE: &str = "a value with px or % (e.g. 4px)";
 
 /// Empty input is valid (optional field). Otherwise 1–4 tokens, each `0`, a
 /// number + `px`/`%`, or a bare number (normalized to `px`).
+/// MJML `unit(px,%){1,4}` does not accept negatives — reject them here so
+/// F3 / FormEdit fail instead of a strict compile dropping the whole email.
 pub fn normalize_padding(value: &str) -> Result<String, String> {
     let t = value.trim();
     if t.is_empty() {
@@ -21,9 +23,49 @@ pub fn normalize_padding(value: &str) -> Result<String, String> {
     }
     let mut out = Vec::with_capacity(parts.len());
     for part in parts {
+        if part.starts_with('-') {
+            return Err(RULE.to_string());
+        }
         out.push(normalize_token(part)?);
     }
     Ok(out.join(" "))
+}
+
+/// Left+right in `px` from a 1–4 value padding shorthand.
+/// `None` when empty, `%` is used, or the value is not padding.
+pub fn horizontal_px(value: &str) -> Option<f64> {
+    let normalized = normalize_padding(value).ok()?;
+    if normalized.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = normalized.split_whitespace().collect();
+    let px = |i: usize| -> Option<f64> {
+        let t = *parts.get(i)?;
+        if t == "0" {
+            return Some(0.0);
+        }
+        t.strip_suffix("px")?.parse().ok()
+    };
+    match parts.len() {
+        1 => Some(px(0)? * 2.0),
+        2 | 3 => Some(px(1)? * 2.0),
+        4 => Some(px(1)? + px(3)?),
+        _ => None,
+    }
+}
+
+/// Left+right border widths in `px` from a CSS border string (`1px solid #000`).
+/// `none` / empty / unparseable → 0.
+pub fn border_horizontal_px(value: &str) -> f64 {
+    let first = value.split_whitespace().next().unwrap_or("");
+    if first.is_empty() || first.eq_ignore_ascii_case("none") || first == "0" {
+        return 0.0;
+    }
+    let w = first
+        .strip_suffix("px")
+        .and_then(|n| n.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    w * 2.0
 }
 
 fn normalize_token(token: &str) -> Result<String, String> {
@@ -105,7 +147,6 @@ mod tests {
         assert_eq!(normalize_padding("0").unwrap(), "0");
         assert_eq!(normalize_padding("0 10px").unwrap(), "0 10px");
         assert_eq!(normalize_padding("1.5px").unwrap(), "1.5px");
-        assert_eq!(normalize_padding("-2px").unwrap(), "-2px");
     }
 
     #[test]
@@ -126,6 +167,19 @@ mod tests {
         assert!(normalize_padding("10 px").is_err());
         assert!(normalize_padding("px").is_err());
         assert!(normalize_padding("10PX").is_err());
+        assert!(normalize_padding("-2px").is_err());
+        assert!(normalize_padding("10px -4px").is_err());
+    }
+
+    #[test]
+    fn horizontal_px_from_shorthand() {
+        assert_eq!(horizontal_px("10px").unwrap(), 20.0);
+        assert_eq!(horizontal_px("12px 24px").unwrap(), 48.0);
+        assert_eq!(horizontal_px("1px 2px 3px 4px").unwrap(), 6.0);
+        assert!(horizontal_px("10%").is_none());
+        assert!(horizontal_px("").is_none());
+        assert_eq!(border_horizontal_px("1px solid #ff0000"), 2.0);
+        assert_eq!(border_horizontal_px("none"), 0.0);
     }
 
     #[test]

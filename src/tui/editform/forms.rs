@@ -25,6 +25,18 @@ const fn padding_field() -> FormField {
     }
 }
 
+const fn inner_padding_field() -> FormField {
+    FormField {
+        id: "inner_padding",
+        label: "Inner padding",
+        kind: FieldKind::Text { default: "" },
+        required: false,
+        visible_when: None,
+        hint: Some(crate::padding::HINT),
+        placeholder: Some("e.g. 12px 24px"),
+    }
+}
+
 const fn hinted(
     id: &'static str,
     label: &'static str,
@@ -529,6 +541,7 @@ pub static HERO_FORM: EditForm = EditForm {
         f("width", "Width", FieldKind::Text { default: "" }, false),
         f("height", "Height", FieldKind::Text { default: "" }, false),
         padding_field(),
+        inner_padding_field(),
         border_radius_field(),
         vertical_align_field(),
         css_class_field(),
@@ -690,12 +703,7 @@ pub static BUTTON_FORM: EditForm = EditForm {
         ),
         border_field(),
         border_radius_field(),
-        hinted(
-            "inner_padding",
-            "Inner padding",
-            crate::padding::HINT,
-            crate::padding::PLACEHOLDER,
-        ),
+        inner_padding_field(),
         f("width", "Width", FieldKind::Text { default: "" }, false),
         hinted("height", "Height", crate::padding::UNIT_HINT, "e.g. 44px"),
         f(
@@ -881,12 +889,7 @@ pub static SOCIAL_FORM: EditForm = EditForm {
             crate::padding::HINT,
             crate::padding::PLACEHOLDER,
         ),
-        hinted(
-            "inner_padding",
-            "Inner padding",
-            crate::padding::HINT,
-            crate::padding::PLACEHOLDER,
-        ),
+        inner_padding_field(),
         hinted(
             "font_size",
             "Font size",
@@ -1158,15 +1161,18 @@ pub static CAROUSEL_IMAGE_FORM: EditForm = EditForm {
 pub static TABLE_FORM: EditForm = EditForm {
     title: "mj-table",
     fields: &[
-        f(
-            "content",
-            "Table HTML",
-            FieldKind::Textarea {
+        FormField {
+            id: "content",
+            label: "Table HTML",
+            kind: FieldKind::Textarea {
                 rows: 8,
                 default: "",
             },
-            true,
-        ),
+            required: true,
+            visible_when: None,
+            hint: Some("Rows only: <tr><td>…</td></tr>. mj-table already emits <table>."),
+            placeholder: Some("<tr><td></td></tr>"),
+        },
         f(
             "font_size",
             "Font size",

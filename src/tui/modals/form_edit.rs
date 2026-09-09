@@ -18,6 +18,21 @@ impl App {
         use crate::tui::editform;
         use crate::tui::form_textarea::*;
 
+        if matches!(key.code, KeyCode::Char('e')) && key.modifiers.contains(KeyModifiers::CONTROL) {
+            let is_textarea = matches!(
+                self.modal.as_ref(),
+                Some(Modal::FormEdit { state, .. })
+                    if matches!(
+                        state.form.fields.get(state.focused_field).map(|f| &f.kind),
+                        Some(editform::FieldKind::Textarea { .. })
+                    )
+            );
+            if is_textarea {
+                self.form_textarea_expanded = !self.form_textarea_expanded;
+            }
+            return Some(ModalResult::Continue);
+        }
+
         if matches!(key.code, KeyCode::Char('p')) && key.modifiers.contains(KeyModifiers::CONTROL) {
             let Some(Modal::FormEdit { state, .. }) = self.modal.as_ref() else {
                 return Some(ModalResult::Continue);
@@ -56,6 +71,7 @@ impl App {
                     } else {
                         items.push(state);
                     }
+                    self.form_textarea_expanded = false;
                     self.push_toast(ToastLevel::Success, "Item saved — editing parent.");
                     self.modal = Some(Modal::FormEdit {
                         state: parent,
@@ -67,11 +83,13 @@ impl App {
                     return Some(ModalResult::Continue);
                 }
                 let Some(template) = self.template.as_mut() else {
+                    self.form_textarea_expanded = false;
                     self.push_toast(ToastLevel::Warning, "No template open.");
                     return Some(ModalResult::CloseCancel);
                 };
                 match crate::tui::cursor::apply_form(template, &cursor, &state) {
                     Ok(()) => {
+                        self.form_textarea_expanded = false;
                         let msg = format!("Saved {}.", state.form.title);
                         self.push_toast(ToastLevel::Success, msg);
                         return Some(ModalResult::CloseSuccess);
@@ -93,6 +111,10 @@ impl App {
         }
 
         if matches!(key.code, KeyCode::Esc) {
+            if self.form_textarea_expanded {
+                self.form_textarea_expanded = false;
+                return Some(ModalResult::Continue);
+            }
             let taken = self.modal.take();
             if let Some(Modal::FormEdit {
                 cursor,
@@ -112,10 +134,12 @@ impl App {
                     return Some(ModalResult::Continue);
                 }
             }
+            self.form_textarea_expanded = false;
             self.modal = None;
             return Some(ModalResult::CloseCancel);
         }
 
+        let expanded = self.form_textarea_expanded;
         let Some(Modal::FormEdit {
             state,
             cursor_pos,
@@ -283,7 +307,7 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Tab => {
+            KeyCode::Tab if !expanded => {
                 state.focus_next();
                 *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                 *cursor_pos = state
@@ -291,7 +315,7 @@ impl App {
                     .chars()
                     .count();
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab if !expanded => {
                 state.focus_prev();
                 *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                 *cursor_pos = state
@@ -390,18 +414,71 @@ impl App {
         m: event::MouseEvent,
     ) -> Option<ModalResult> {
         match m.kind {
-            MouseEventKind::ScrollUp => {
-                if let Some(Modal::FormEdit { scroll_offset, .. }) = self.modal.as_mut() {
-                    *scroll_offset = scroll_offset.saturating_sub(3);
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                let delta: isize = if matches!(m.kind, MouseEventKind::ScrollUp) {
+                    -3
+                } else {
+                    3
+                };
+                if self.form_textarea_expanded {
+                    if let Some(Modal::FormEdit {
+                        state, cursor_pos, ..
+                    }) = self.modal.as_mut()
+                    {
+                        let field_id = match state.form.fields.get(state.focused_field) {
+                            Some(f)
+                                if matches!(
+                                    f.kind,
+                                    crate::tui::editform::FieldKind::Textarea { .. }
+                                ) =>
+                            {
+                                Some(f.id)
+                            }
+                            _ => None,
+                        };
+                        if let Some(field_id) = field_id {
+                            *cursor_pos = crate::tui::form_textarea::textarea_move_cursor_vertical(
+                                state.get(field_id),
+                                *cursor_pos,
+                                delta,
+                            );
+                        }
+                    }
+                    return Some(ModalResult::Continue);
                 }
-            }
-            MouseEventKind::ScrollDown => {
                 if let Some(Modal::FormEdit { scroll_offset, .. }) = self.modal.as_mut() {
-                    *scroll_offset = scroll_offset.saturating_add(3);
+                    if delta < 0 {
+                        *scroll_offset = scroll_offset.saturating_sub(delta.unsigned_abs() as u16);
+                    } else {
+                        *scroll_offset = scroll_offset.saturating_add(delta as u16);
+                    }
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 let (x, y) = (m.column, m.row);
+                let expand_hit = self
+                    .form_expand_hits
+                    .borrow()
+                    .iter()
+                    .find(|(_, r)| contains_rect(*r, x, y))
+                    .map(|(idx, _)| *idx);
+                if let Some(idx) = expand_hit {
+                    if let Some(Modal::FormEdit {
+                        state, cursor_pos, ..
+                    }) = self.modal.as_mut()
+                    {
+                        state.focused_field = idx;
+                        let field_id = state.form.fields.get(idx).map(|f| f.id);
+                        if let Some(field_id) = field_id {
+                            *cursor_pos = state.get(field_id).chars().count();
+                        }
+                    }
+                    self.form_textarea_expanded = true;
+                    return Some(ModalResult::Continue);
+                }
+                if self.form_textarea_expanded {
+                    return Some(ModalResult::Continue);
+                }
                 if let Some((_, idx)) = self
                     .form_field_areas
                     .borrow()

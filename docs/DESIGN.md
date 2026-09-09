@@ -868,7 +868,7 @@ Attribute names in JSON are snake_case; emitter maps to MJML hyphen-case. Omit e
 
 **`MjText`:** `content: String` (plain text, or a well-formed allowlisted HTML fragment: `br`, `a`, `b`, `strong`, `em`, `span`, `u`; merge tags opaque), `align: Option<Align>`, `font_size: Option<String>`, `font_family: Option<String>` (omit → `mj-all` / brand stack; set to a `head.fonts[].name` plus fallbacks, e.g. `"Raleway, Arial, sans-serif"`), `color: Option<String>`, `padding: Option<String>`. Default content `"Write something."`. See Escaping.
 
-**`MjButton`:** `content: String` (label, **plain text**, XML-escaped — not an HTML fragment), `href: String` (URL or merge tag), `background_color`, `color`, `align: Option<Align>`, `font_family: Option<String>` (same omit rule as text), `border_radius`, `width`, `padding`. Default href `"https://example.com"`, content `"Read more"`.
+**`MjButton`:** `content: String` (label, **plain text**, XML-escaped — not an HTML fragment), `href: String` (URL or merge tag), `background_color`, `color`, `align: Option<Align>`, `font_family: Option<String>` (same omit rule as text), `border_radius`, `width`, `inner_padding` (MJML `inner-padding`; omit → brand `mj-attributes` default `12px 24px`), `padding`. Default href `"https://example.com"`, content `"Read more"`. MJML sizes the inner `<a>` as `width − inner-padding left/right − border`; a px `width` that is too small for the effective inner-padding is a validate error (the button would compile to `width:0` and disappear).
 
 **`MjImage`:** `src: String` (**required**, empty is a validation error), `alt: String` (**required**, empty is a validation error), `href: Option<String>`, `width: Option<String>`, `align: Option<Align>` (MJML `align`; omit → MJML default center), `fluid_on_mobile: bool` (default true → `fluid-on-mobile="true"`), `padding`. `src` of `data:` or `cid:` is a validation error in every mode.
 
@@ -878,9 +878,9 @@ Attribute names in JSON are snake_case; emitter maps to MJML hyphen-case. Omit e
 
 **`MjSocial`:** `mode: SocialMode` (default `horizontal`), `align: Option<Align>`, `icon_size` (default `"32px"`), `elements: Vec<MjSocialElement>` where each element is `{ "name": SocialNetwork, "href": String }`. JSON `"x"` (`SocialNetwork::X`) emits MJML `name="twitter"` unless the PR 3 compiler check finds a built-in `x` network in MJML 5.4. `web` uses `src` pointing at a local `images/web.png` or a well-known simple PNG URL; if missing src, skip the element with a warning.
 
-**`MjTable`:** `content: String` (must be a single well-formed `<table>…</table>` fragment; see Escaping), `font_size`, `color`, `padding`. Body nested-HTML escape hatch in v1. Empty content is a validation error. Head JSON-LD is a **separate** typed field, not a table or a user-typed `mj-raw` node.
+**`MjTable`:** `content: String` (must be table-row markup — `<tr>` / `<td>` / `<th>`, optional `<thead>` / `<tbody>` / `<tfoot>`; see Escaping). `mj-table` already emits `<table>`, so a wrapping `<table>…</table>` is a validation error (browsers hoist it out of the element). `font_size`, `color`, `padding`. Body nested-HTML escape hatch in v1. Empty content is a validation error. Head JSON-LD is a **separate** typed field, not a table or a user-typed `mj-raw` node.
 
-**`MjHero`:** `mode: HeroMode` (default `fluid-height`), `background_url: Option<String>`, `background_color`, `background_height`, `width`, `height`, `children: Vec<ColumnChild>` (hero acts as a single column in MJML). `background_url` follows the same image URL rules as `mj-image.src` (empty/data/cid rejected when present).
+**`MjHero`:** `mode: HeroMode` (default `fluid-height`), `background_url: Option<String>`, `background_color`, `background_height`, `width`, `height`, `padding`, `inner_padding` (MJML `inner-padding`), `children: Vec<ColumnChild>` (hero acts as a single column in MJML). `background_url` follows the same image URL rules as `mj-image.src` (empty/data/cid rejected when present).
 
 ### Opinionated blocks
 
@@ -925,7 +925,7 @@ These are first-class JSON nodes. Specs in `components/email-*.md` are the field
 - `mj-image.alt` empty (primitive always requires alt). `email-header.logo_alt`, `email-hero.image_alt`, and `email-article.image_alt` required **iff** the matching `*_src` is non-empty. Text-only hero/article/header (empty src, empty alt) is valid.
 - `mj-button.href` empty; `mj-social-element.href` empty.
 - `mj-text.content` or `mj-table.content` containing `</mj-` (case-insensitive) — would close the emitter tag.
-- `mj-table.content` empty, or not a single `<table>…</table>` fragment.
+- `mj-table.content` empty, a wrapping `<table>…</table>`, or missing `<tr>…</tr>` rows.
 - **`head.fonts`:** empty `name`; duplicate names (case-insensitive); `href` not starting with `https://fonts.googleapis.com/css?` or `https://fonts.googleapis.com/css2?` (allow `css?family=` and `css2?family=`). No `http://`, no other hosts.
 - **`head.json_ld`:** if non-empty, must parse as a JSON object or array (`serde_json::Value::Object` or `Array`). Strings/numbers/bools at the root are errors. After parse, the pretty-printed form must not contain `</script` or `</mj-` (case-insensitive) — belt and suspenders; wrapping is still emitter-owned.
 - **`head.css`:** if non-empty, must not contain `</mj-style>`, `</mj-`, or `@import` (case-insensitive). `url(` is allowed only if every `url(` argument is a Google Fonts `https://fonts.googleapis.com/` URL; otherwise error (blocks using CSS as a font/CDN back door).
@@ -1057,7 +1057,7 @@ Attribute values (`href`, `src`, `mj-title`, …) and **plain-text** inner conte
 
 1. **Validate** (error): content containing `</mj-` (case-insensitive) is rejected. Snapshot test: `mj-text.content = "</mj-text>oops"` fails validate and, if forced through the emitter, the written MJML still has exactly one closing `</mj-text>` for that node (the payload is escaped so it cannot close the tag).
 2. **`mj-text`:** if `content` is a well-formed fragment using **only** allowlisted tags `br | a | b | strong | em | span | u` (plus text and merge tags), emit the fragment as XML inner HTML (attribute values inside those tags still XML-escaped). Otherwise treat the whole string as plain text and XML-escape `& < >`.
-3. **`mj-table`:** `content` must be a **single** well-formed `<table>…</table>` element. Anything else is a validate error. Emitter does not wrap a second table. Inner `</mj-` is already banned by (1).
+3. **`mj-table`:** `content` must be table-row markup (`<tr>` / `<td>` / `<th>`, optional `<thead>` / `<tbody>` / `<tfoot>`). A wrapping `<table>…</table>` is a validate error — `mj-table` already emits `<table>`, and a nested table as a direct child is hoisted out of the element by browsers. A `<table>` *inside a cell* is allowed. Empty content is a validate error. Emitter dumps the fragment as inner HTML and does not wrap another table. Inner `</mj-` is already banned by (1).
 
 A tiny tag scanner in `emit.rs` (no extra crate) implements “well-formed allowlisted fragment.” Tests cover: plain `"Hello & Co"` → `Hello &amp; Co`; `"<b>Hi</b>"` → passed through; `"<script>"` → escaped; `"</mj-text>"` → validate error.
 

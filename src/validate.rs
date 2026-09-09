@@ -334,6 +334,41 @@ fn check_padding(report: &mut ValidateReport, field: &str, value: &Option<String
     }
 }
 
+/// MJML sizes the inner `<a>` as `width - innerPadding.left/right - borders`.
+/// Brand `mj-attributes` still apply `12px 24px` when the node omits inner-padding.
+fn check_button_inner_padding_vs_width(report: &mut ValidateReport, btn: &crate::model::MjButton) {
+    let Some(width) = btn
+        .width
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return;
+    };
+    let Some(width_px) = width.strip_suffix("px").and_then(|n| n.parse::<f64>().ok()) else {
+        return;
+    };
+    let inner = btn
+        .inner_padding
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(crate::emit::BRAND_BUTTON_INNER_PADDING);
+    let Some(inner_h) = crate::padding::horizontal_px(inner) else {
+        return;
+    };
+    let border_h = btn
+        .border
+        .as_deref()
+        .map(crate::padding::border_horizontal_px)
+        .unwrap_or(0.0);
+    if width_px - inner_h - border_h <= 0.0 {
+        report.errors.push(format!(
+            "mj-button inner-padding + border leave no room inside width {width} (MJML collapses the button)"
+        ));
+    }
+}
+
 fn check_one_of(report: &mut ValidateReport, field: &str, value: &str, allowed: &[&str]) {
     let v = value.trim();
     if v.is_empty() {
@@ -549,6 +584,7 @@ fn walk_hero(
         opt(&hero.background_color),
     );
     check_padding(report, "mj-hero.padding", &hero.padding);
+    check_padding(report, "mj-hero.inner_padding", &hero.inner_padding);
     check_unit(report, "mj-hero.border_radius", &hero.border_radius);
     check_opt_one_of(
         report,
@@ -603,6 +639,7 @@ fn walk_column_child(
             check_color(report, "mj-button.color", opt(&btn.color));
             check_padding(report, "mj-button.padding", &btn.padding);
             check_padding(report, "mj-button.inner_padding", &btn.inner_padding);
+            check_button_inner_padding_vs_width(report, btn);
             check_unit(report, "mj-button.border_radius", &btn.border_radius);
             check_unit(report, "mj-button.font_size", &btn.font_size);
             check_unit(report, "mj-button.height", &btn.height);
@@ -671,9 +708,10 @@ fn walk_column_child(
                     .errors
                     .push("mj-table.content contains </mj-".to_string());
             }
-            if !is_single_table_fragment(&table.content) {
+            if !is_table_inner_fragment(&table.content) {
                 report.errors.push(
-                    "mj-table.content must be a single <table>…</table> fragment".to_string(),
+                    "mj-table.content must be table rows (<tr>…</tr>), not a wrapping <table>"
+                        .to_string(),
                 );
             }
         }
@@ -983,21 +1021,37 @@ fn local_image_exists(root: &Path, src: &str) -> bool {
     candidates.iter().any(|p| p.is_file())
 }
 
-fn is_single_table_fragment(content: &str) -> bool {
+/// `mj-table` already emits `<table>`. Inner content must be row markup
+/// (`<tr>` / `<td>` / `<th>`, optional thead/tbody/tfoot). A wrapping
+/// `<table>…</table>` is illegal: browsers hoist it out of the parent table.
+fn is_table_inner_fragment(content: &str) -> bool {
     let t = content.trim();
     if t.is_empty() {
         return false;
     }
     let lower = t.to_ascii_lowercase();
-    lower.starts_with("<table") && lower.ends_with("</table>")
+    if starts_with_table_tag(&lower) {
+        return false;
+    }
+    lower.contains("<tr") && lower.contains("</tr>")
+}
+
+fn starts_with_table_tag(lower: &str) -> bool {
+    let Some(rest) = lower.strip_prefix("<table") else {
+        return false;
+    };
+    rest.is_empty()
+        || rest.starts_with('>')
+        || rest.starts_with('/')
+        || rest.starts_with(|c: char| c.is_whitespace())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::{
-        BodyNode, ColumnChild, EmailFooter, EmailHero, MjColumn, MjImage, MjSection, MjText,
-        Template, WebFont,
+        BodyNode, ColumnChild, EmailFooter, EmailHero, MjButton, MjColumn, MjImage, MjSection,
+        MjTable, MjText, Template, WebFont,
     };
     use std::fs;
 
@@ -1370,6 +1424,62 @@ mod tests {
         t
     }
 
+    fn template_with_table(content: &str) -> Template {
+        let mut t = Template::minimal();
+        t.body.nodes.push(BodyNode::MjSection(MjSection {
+            children: vec![crate::model::SectionChild::MjColumn(MjColumn {
+                components: vec![ColumnChild::MjTable(MjTable {
+                    content: content.to_string(),
+                    ..Default::default()
+                })],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        t
+    }
+
+    #[test]
+    fn table_inner_fragment_shape() {
+        assert!(!is_table_inner_fragment(""));
+        assert!(!is_table_inner_fragment("   "));
+        assert!(!is_table_inner_fragment("hello"));
+        assert!(!is_table_inner_fragment(
+            "<table><tr><td></td></tr></table>"
+        ));
+        assert!(!is_table_inner_fragment(
+            "<TABLE border=\"0\"><tr><td>x</td></tr></TABLE>"
+        ));
+        assert!(is_table_inner_fragment("<tr><td></td></tr>"));
+        assert!(is_table_inner_fragment(
+            "<thead><tr><th>H</th></tr></thead><tbody><tr><td>B</td></tr></tbody>"
+        ));
+        assert!(is_table_inner_fragment(
+            "<tr><td><table><tr><td>n</td></tr></table></td></tr>"
+        ));
+    }
+
+    #[test]
+    fn mj_table_wrapping_table_is_error() {
+        let t = template_with_table("<table><tr><td></td></tr></table>");
+        let r = validate_template(&t);
+        assert!(report_has(&r, "wrapping <table>"));
+    }
+
+    #[test]
+    fn mj_table_row_fragment_passes() {
+        let t = template_with_table("<tr><td></td></tr>");
+        let r = validate_template(&t);
+        assert!(r.ok(), "{:?}", r.errors);
+    }
+
+    #[test]
+    fn mj_table_empty_content_is_error() {
+        let t = template_with_table("");
+        let r = validate_template(&t);
+        assert!(report_has(&r, "mj-table.content"));
+    }
+
     #[test]
     fn unitless_padding_is_accepted() {
         let t = section_with_column_padding(Some("12 10 12 10".into()));
@@ -1397,5 +1507,68 @@ mod tests {
         let t = section_with_column_padding(Some("1px 2px 3px 4px 5px".into()));
         let r = validate_template(&t);
         assert!(report_has(&r, "mj-column.padding"));
+    }
+
+    fn template_with_button(btn: MjButton) -> Template {
+        let mut t = Template::minimal();
+        t.body.nodes.push(BodyNode::MjSection(MjSection {
+            children: vec![crate::model::SectionChild::MjColumn(MjColumn {
+                components: vec![ColumnChild::MjButton(btn)],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        t
+    }
+
+    #[test]
+    fn mj_button_inner_padding_collapsing_width_is_error() {
+        let t = template_with_button(MjButton {
+            content: "Go".into(),
+            href: "https://example.com".into(),
+            width: Some("200px".into()),
+            inner_padding: Some("100px 100px".into()),
+            ..Default::default()
+        });
+        let r = validate_template(&t);
+        assert!(report_has(&r, "collapses the button"));
+    }
+
+    #[test]
+    fn mj_button_width_too_small_for_brand_inner_padding_is_error() {
+        let t = template_with_button(MjButton {
+            content: "Go".into(),
+            href: "https://example.com".into(),
+            width: Some("40px".into()),
+            ..Default::default()
+        });
+        let r = validate_template(&t);
+        assert!(report_has(&r, "collapses the button"));
+    }
+
+    #[test]
+    fn mj_button_inner_padding_fits_width() {
+        let t = template_with_button(MjButton {
+            content: "Go".into(),
+            href: "https://example.com".into(),
+            width: Some("200px".into()),
+            inner_padding: Some("8px 16px".into()),
+            border: Some("1px solid #ff0000".into()),
+            ..Default::default()
+        });
+        let r = validate_template(&t);
+        assert!(r.ok(), "{:?}", r.errors);
+    }
+
+    #[test]
+    fn mj_button_negative_inner_padding_is_error() {
+        let t = template_with_button(MjButton {
+            content: "Go".into(),
+            href: "https://example.com".into(),
+            inner_padding: Some("-2px".into()),
+            ..Default::default()
+        });
+        let r = validate_template(&t);
+        assert!(report_has(&r, "mj-button.inner_padding"));
     }
 }

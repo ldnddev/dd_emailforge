@@ -782,6 +782,8 @@ pub struct MjHero {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub padding: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inner_padding: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_radius: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vertical_align: Option<String>,
@@ -948,7 +950,7 @@ mod tests {
                             ..Default::default()
                         }),
                         ColumnChild::MjTable(MjTable {
-                            content: "<table><tr><td>1</td></tr></table>".to_string(),
+                            content: "<tr><td>1</td></tr>".to_string(),
                             font_size: None,
                             color: None,
                             padding: None,

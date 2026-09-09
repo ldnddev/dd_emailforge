@@ -274,7 +274,7 @@ impl ComponentKind {
                 ..Default::default()
             }),
             Self::MjTable => ColumnChild::MjTable(MjTable {
-                content: "<table><tr><td></td></tr></table>".into(),
+                content: "<tr><td></td></tr>".into(),
                 font_size: None,
                 color: None,
                 padding: None,
@@ -632,5 +632,14 @@ mod tests {
     fn group_picker_is_column_only() {
         let labels = kind_labels(SelectionClass::Group);
         assert_eq!(labels, vec!["mj-column"]);
+    }
+
+    #[test]
+    fn mj_table_insert_default_is_row_markup() {
+        let Some(ColumnChild::MjTable(t)) = ComponentKind::MjTable.as_leaf() else {
+            panic!("expected mj-table leaf");
+        };
+        assert_eq!(t.content, "<tr><td></td></tr>");
+        assert!(!t.content.to_ascii_lowercase().contains("<table"));
     }
 }

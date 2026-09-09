@@ -27,15 +27,8 @@
     "css_inline": true
   },
   "body": {
-    "background_color": "",
+    "background_color": "#ffffff",
     "nodes": [
-      {
-        "type": "email-header",
-        "logo_src": "https://dummyimage.com/320x80/0F1114/FFAF46",
-        "logo_alt": "Logo",
-        "logo_href": "https://example.com",
-        "logo_width": "160px"
-      },
       {
         "type": "mj-section",
         "full_width": false,
@@ -43,50 +36,25 @@
           {
             "type": "mj-column",
             "width": "100%",
-            "components": []
-          }
-        ]
-      },
-      {
-        "type": "email-hero",
-        "image_src": "https://dummyimage.com/600x240/0F1114/FFAF46",
-        "image_alt": "You're in.",
-        "heading": "You're in.",
-        "subheading": "Thanks for joining us.",
-        "background_color": "#ffffff"
-      },
-      {
-        "type": "mj-section",
-        "full_width": false,
-        "children": [
-          {
-            "type": "mj-column",
-            "width": "50%",
             "components": [
               {
-                "type": "mj-text",
-                "content": "What you get: a weekly note, no spam."
-              }
-            ]
-          },
-          {
-            "type": "mj-column",
-            "width": "50%",
-            "components": [
-              {
-                "type": "mj-text",
-                "content": "What we need: nothing else. You're set."
+                "type": "mj-table",
+                "content": "<tr><td>this is a table entry inside a column.</td></tr>",
+                "font_size": "14px",
+                "font_family": "Arial",
+                "color": "#000000",
+                "align": "left",
+                "width": "100%",
+                "border": "1px solid #000000",
+                "padding": "2%",
+                "cellpadding": "1",
+                "cellspacing": "2",
+                "role": "none",
+                "css_class": "table-class"
               }
             ]
           }
         ]
-      },
-      {
-        "type": "email-cta",
-        "heading": "Start here",
-        "copy": "Open the app and pick a template.",
-        "button_label": "Open the app",
-        "button_href": "https://example.com"
       },
       {
         "type": "email-footer",
@@ -99,6 +67,42 @@
         "unsubscribe_href": "*|UNSUB|*",
         "social": [],
         "copyright": "© Example Co"
+      },
+      {
+        "type": "mj-section",
+        "full_width": false,
+        "children": [
+          {
+            "type": "mj-column",
+            "width": "100%",
+            "components": [
+              {
+                "type": "mj-table",
+                "content": "<tr><td></td></tr>"
+              },
+              {
+                "type": "mj-button",
+                "content": "Read more",
+                "href": "https://example.com",
+                "background_color": "#101010",
+                "color": "#ffffff",
+                "align": "center",
+                "font_family": "Arial",
+                "font_size": "22px",
+                "font_weight": "bold",
+                "font_style": "normal",
+                "border": "1px solid #ff0000",
+                "border_radius": "12px",
+                "width": "200px",
+                "target": "_blank",
+                "padding": "2px",
+                "line_height": "100%",
+                "text_decoration": "underline",
+                "text_transform": "uppercase"
+              }
+            ]
+          }
+        ]
       }
     ]
   }
