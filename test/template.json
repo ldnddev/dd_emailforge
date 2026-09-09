@@ -93,9 +93,9 @@
                 "font_style": "normal",
                 "border": "1px solid #ff0000",
                 "border_radius": "12px",
-                "width": "200px",
+                "inner_padding": "12px",
                 "target": "_blank",
-                "padding": "2px",
+                "padding": "4px",
                 "line_height": "100%",
                 "text_decoration": "underline",
                 "text_transform": "uppercase"

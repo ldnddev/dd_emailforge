@@ -42,7 +42,7 @@
         <mj-table>
           <tr><td></td></tr>
         </mj-table>
-        <mj-button href="https://example.com" background-color="#101010" color="#ffffff" align="center" font-family="Arial" font-size="22px" font-weight="bold" font-style="normal" border="1px solid #ff0000" border-radius="12px" width="200px" target="_blank" padding="2px" line-height="100%" text-decoration="underline" text-transform="uppercase">
+        <mj-button href="https://example.com" background-color="#101010" color="#ffffff" align="center" font-family="Arial" font-size="22px" font-weight="bold" font-style="normal" border="1px solid #ff0000" border-radius="12px" inner-padding="12px" target="_blank" padding="4px" line-height="100%" text-decoration="underline" text-transform="uppercase">
           Read more
         </mj-button>
       </mj-column>
