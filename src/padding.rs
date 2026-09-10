@@ -55,17 +55,9 @@ pub fn horizontal_px(value: &str) -> Option<f64> {
 }
 
 /// Left+right border widths in `px` from a CSS border string (`1px solid #000`).
-/// `none` / empty / unparseable → 0.
+/// `none` / empty / unparseable → 0. All four sides.
 pub fn border_horizontal_px(value: &str) -> f64 {
-    let first = value.split_whitespace().next().unwrap_or("");
-    if first.is_empty() || first.eq_ignore_ascii_case("none") || first == "0" {
-        return 0.0;
-    }
-    let w = first
-        .strip_suffix("px")
-        .and_then(|n| n.parse::<f64>().ok())
-        .unwrap_or(0.0);
-    w * 2.0
+    crate::border::horizontal_px(value, None)
 }
 
 fn normalize_token(token: &str) -> Result<String, String> {

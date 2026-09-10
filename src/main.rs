@@ -1,3 +1,4 @@
+mod border;
 mod emit;
 mod mjml;
 mod model;

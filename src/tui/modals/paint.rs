@@ -195,6 +195,8 @@ impl App {
         use crate::tui::form_textarea::*;
 
         self.form_expand_hits.borrow_mut().clear();
+        self.form_checkbox_hits.borrow_mut().clear();
+        self.form_textarea_hits.borrow_mut().clear();
         if self.form_textarea_expanded {
             self.render_textarea_expand_modal(frame, state, cursor_pos);
             return;
@@ -219,14 +221,15 @@ impl App {
         }
 
         let help_rect = Rect::new(inner.x, inner.y, inner.width, 1);
-        let focused_is_textarea = matches!(
-            state.form.fields.get(state.focused_field).map(|f| &f.kind),
-            Some(editform::FieldKind::Textarea { .. })
-        );
-        let help_text = if focused_is_textarea {
-            "Tab/Up/Down: navigate  |  Ctrl+E: expand  |  Ctrl+S: save  |  Esc: cancel"
-        } else {
-            "Tab/Up/Down: navigate  |  ←/→: cycle enum  |  Ctrl+S: save  |  Esc: cancel"
+        let focused_kind = state.form.fields.get(state.focused_field).map(|f| &f.kind);
+        let help_text = match focused_kind {
+            Some(editform::FieldKind::Textarea { .. }) => {
+                "Tab/Up/Down: line  |  Home/End  |  click: cursor  |  Ctrl+E: expand  |  Ctrl+S: save  |  Esc: cancel"
+            }
+            Some(editform::FieldKind::Checkboxes { .. }) => {
+                "Tab/Up/Down: navigate  |  ←/→: move  |  Space: toggle  |  Ctrl+S: save  |  Esc: cancel"
+            }
+            _ => "Tab/Up/Down: navigate  |  ←/→: cycle enum  |  Ctrl+S: save  |  Esc: cancel",
         };
         frame.render_widget(
             Paragraph::new(help_text).style(
@@ -484,7 +487,10 @@ impl App {
 
         let help_rect = Rect::new(inner.x, inner.y, inner.width, 1);
         frame.render_widget(
-            Paragraph::new("Esc: back to form  |  Ctrl+S: save  |  Enter: newline").style(
+            Paragraph::new(
+                "Esc: back  |  Ctrl+S: save  |  Enter: newline  |  Home/End  |  click: cursor",
+            )
+            .style(
                 Style::default()
                     .fg(self.theme.modal_labels)
                     .bg(self.theme.modal_background)
@@ -579,10 +585,10 @@ impl App {
             }
             editform::FieldKind::Textarea { .. } => {
                 let value = state.get(field.id);
-                let visible_rows = rect.height as usize;
-                let (display, first_visible_row, total_rows) =
-                    render_textarea_display_window(value, cursor_pos, focused, visible_rows);
-                let text_rect = if total_rows > visible_rows {
+                let visible_rows = rect.height.max(1) as usize;
+                let (wrap_width, show_scroll) = textarea_wrap_for_rect(value, rect);
+                let wrap = Some(wrap_width);
+                let text_rect = if show_scroll {
                     Rect {
                         width: rect.width.saturating_sub(1),
                         ..rect
@@ -590,11 +596,25 @@ impl App {
                 } else {
                     rect
                 };
+                let (display, first_visible_row, total_rows) =
+                    render_textarea_display_window(value, cursor_pos, focused, visible_rows, wrap);
                 frame.render_widget(Paragraph::new(display).style(value_style), text_rect);
+                let field_idx = state
+                    .form
+                    .fields
+                    .iter()
+                    .position(|f| f.id == field.id)
+                    .unwrap_or(state.focused_field);
+                self.form_textarea_hits.borrow_mut().push(TextareaHit {
+                    rect: text_rect,
+                    field_idx,
+                    first_visible_row,
+                    wrap_width,
+                });
                 if focused && text_rect.width > 0 && text_rect.height > 0 {
-                    let row =
-                        textarea_cursor_row(value, cursor_pos).saturating_sub(first_visible_row);
-                    let col = textarea_cursor_col(value, cursor_pos);
+                    let row = textarea_cursor_row(value, cursor_pos, wrap)
+                        .saturating_sub(first_visible_row);
+                    let col = textarea_cursor_col(value, cursor_pos, wrap);
                     if (row as u16) < text_rect.height && (col as u16) < text_rect.width {
                         let ch = value
                             .chars()
@@ -616,7 +636,7 @@ impl App {
                         );
                     }
                 }
-                if total_rows > visible_rows {
+                if show_scroll {
                     render_textarea_scrollbar(
                         frame,
                         Rect {
@@ -643,6 +663,36 @@ impl App {
                         .bg(self.theme.modal_background);
                 }
                 frame.render_widget(Paragraph::new(display).style(style), rect);
+            }
+            editform::FieldKind::Checkboxes { options, .. } => {
+                let sides = crate::border::Sides::from_storage(state.get(field.id))
+                    .unwrap_or(crate::border::Sides::ALL);
+                let item_rects = editform::checkbox_item_rects(options, rect);
+                let field_idx = state
+                    .form
+                    .fields
+                    .iter()
+                    .position(|f| f.id == field.id)
+                    .unwrap_or(state.focused_field);
+                for (i, ((id, label), item_rect)) in
+                    options.iter().zip(item_rects.iter()).enumerate()
+                {
+                    let checked = sides.has(id);
+                    let mark = if checked { "[x]" } else { "[ ]" };
+                    let text = format!("{mark} {label}");
+                    let option_focused = focused && i == state.checkbox_cursor;
+                    let style = if option_focused {
+                        Style::default()
+                            .fg(self.theme.text_inverse)
+                            .bg(self.theme.cursor)
+                    } else {
+                        value_style
+                    };
+                    frame.render_widget(Paragraph::new(text).style(style), *item_rect);
+                    self.form_checkbox_hits
+                        .borrow_mut()
+                        .push((*item_rect, field_idx, i));
+                }
             }
             editform::FieldKind::SubForm {
                 summary_field_id, ..

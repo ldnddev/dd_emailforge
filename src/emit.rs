@@ -200,7 +200,7 @@ fn emit_section(
         s.background_color.as_deref(),
     );
     push_padding(&mut attrs, s.padding.as_deref());
-    push_opt(&mut attrs, "border", s.border.as_deref());
+    push_border(&mut attrs, s.border.as_deref(), s.border_sides.as_deref());
     push_unit(&mut attrs, "border-radius", s.border_radius.as_deref());
     push_unit(&mut attrs, "gutter", s.gutter.as_deref());
     push_bg_url(&mut attrs, s.background_url.as_deref(), t, mode)?;
@@ -239,7 +239,7 @@ fn emit_wrapper(
         s.background_color.as_deref(),
     );
     push_padding(&mut attrs, s.padding.as_deref());
-    push_opt(&mut attrs, "border", s.border.as_deref());
+    push_border(&mut attrs, s.border.as_deref(), s.border_sides.as_deref());
     push_unit(&mut attrs, "border-radius", s.border_radius.as_deref());
     push_bg_url(&mut attrs, s.background_url.as_deref(), t, mode)?;
     push_opt(&mut attrs, "background-size", s.background_size.as_deref());
@@ -294,9 +294,14 @@ fn emit_column(w: &mut Writer, t: &Template, mode: &EmitMode, c: &MjColumn) -> a
         "inner-background-color",
         c.inner_background_color.as_deref(),
     );
-    push_opt(&mut attrs, "border", c.border.as_deref());
+    push_border(&mut attrs, c.border.as_deref(), c.border_sides.as_deref());
     push_unit(&mut attrs, "border-radius", c.border_radius.as_deref());
-    push_opt(&mut attrs, "inner-border", c.inner_border.as_deref());
+    push_border_named(
+        &mut attrs,
+        "inner-border",
+        c.inner_border.as_deref(),
+        c.inner_border_sides.as_deref(),
+    );
     push_unit(
         &mut attrs,
         "inner-border-radius",
@@ -421,7 +426,7 @@ fn emit_button(w: &mut Writer, n: &MjButton) -> anyhow::Result<()> {
     push_opt(&mut attrs, "font-size", n.font_size.as_deref());
     push_opt(&mut attrs, "font-weight", n.font_weight.as_deref());
     push_opt(&mut attrs, "font-style", n.font_style.as_deref());
-    push_opt(&mut attrs, "border", n.border.as_deref());
+    push_border(&mut attrs, n.border.as_deref(), n.border_sides.as_deref());
     push_unit(&mut attrs, "border-radius", n.border_radius.as_deref());
     push_padding_named(&mut attrs, "inner-padding", n.inner_padding.as_deref());
     push_opt(&mut attrs, "width", n.width.as_deref());
@@ -456,7 +461,7 @@ fn emit_image(w: &mut Writer, t: &Template, mode: &EmitMode, n: &MjImage) -> any
     if n.fluid_on_mobile {
         attrs.push(("fluid-on-mobile", "true".into()));
     }
-    push_opt(&mut attrs, "border", n.border.as_deref());
+    push_border(&mut attrs, n.border.as_deref(), n.border_sides.as_deref());
     push_unit(&mut attrs, "border-radius", n.border_radius.as_deref());
     push_opt(&mut attrs, "title", n.title.as_deref());
     push_padding(&mut attrs, n.padding.as_deref());
@@ -995,6 +1000,27 @@ fn push_opt(attrs: &mut Vec<(&'static str, String)>, key: &'static str, value: O
     }
 }
 
+fn push_border(attrs: &mut Vec<(&'static str, String)>, value: Option<&str>, sides: Option<&str>) {
+    push_border_named(attrs, "border", value, sides);
+}
+
+fn push_border_named(
+    attrs: &mut Vec<(&'static str, String)>,
+    shorthand: &'static str,
+    value: Option<&str>,
+    sides: Option<&str>,
+) {
+    let Some(v) = value.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    let escaped = xml_escape_attr(v);
+    let parsed = crate::border::Sides::from_storage(sides.unwrap_or(""))
+        .unwrap_or(crate::border::Sides::ALL);
+    for key in crate::border::mjml_attrs(shorthand, parsed) {
+        attrs.push((key, escaped.clone()));
+    }
+}
+
 fn push_padding(attrs: &mut Vec<(&'static str, String)>, value: Option<&str>) {
     push_padding_named(attrs, "padding", value);
 }
@@ -1460,6 +1486,66 @@ mod tests {
         assert!(mjml.contains(r#"inner-padding="8px 16px""#), "{mjml}");
         assert!(mjml.contains(r#"border-style="dashed""#), "{mjml}");
         assert!(mjml.contains(r#"height="120px""#), "{mjml}");
+    }
+
+    #[test]
+    fn border_sides_emit_per_side_attrs() {
+        let mut t = Template::minimal();
+        t.preheader.clear();
+        t.body.nodes.push(BodyNode::MjSection(MjSection {
+            border: Some("1px solid #000".into()),
+            border_sides: Some("top,bottom".into()),
+            children: vec![SectionChild::MjColumn(MjColumn {
+                border: Some("2px dashed #333".into()),
+                border_sides: Some("left".into()),
+                inner_border: Some("1px solid #eee".into()),
+                inner_border_sides: Some("right".into()),
+                components: vec![
+                    ColumnChild::MjButton(MjButton {
+                        content: "Go".into(),
+                        href: "https://example.com".into(),
+                        border: Some("1px solid #333".into()),
+                        border_sides: Some("top".into()),
+                        ..Default::default()
+                    }),
+                    ColumnChild::MjImage(MjImage {
+                        src: "https://example.com/a.png".into(),
+                        alt: "A".into(),
+                        border: Some("4px solid #f00".into()),
+                        border_sides: Some("left,right".into()),
+                        ..Default::default()
+                    }),
+                ],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        let mjml = export(&t);
+        assert!(mjml.contains(r#"border-top="1px solid #000""#), "{mjml}");
+        assert!(mjml.contains(r#"border-bottom="1px solid #000""#), "{mjml}");
+        assert!(mjml.contains(r#"border-left="2px dashed #333""#), "{mjml}");
+        assert!(
+            mjml.contains(r#"inner-border-right="1px solid #eee""#),
+            "{mjml}"
+        );
+        assert!(mjml.contains(r#"border-top="1px solid #333""#), "{mjml}");
+        assert!(mjml.contains(r#"border-left="4px solid #f00""#), "{mjml}");
+        assert!(mjml.contains(r#"border-right="4px solid #f00""#), "{mjml}");
+        assert!(
+            !mjml.contains(r#"<mj-section border="1px solid #000""#),
+            "{mjml}"
+        );
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains("\"border_sides\":\"top,bottom\""), "{json}");
+        let mut t2 = t.clone();
+        if let BodyNode::MjSection(s) = &mut t2.body.nodes[0] {
+            s.border_sides = None;
+        }
+        let all_sides = serde_json::to_string(&t2).unwrap();
+        assert!(
+            !all_sides.contains("\"border_sides\":\"top,bottom\""),
+            "cleared sides should omit that value: {all_sides}"
+        );
     }
 
     #[test]

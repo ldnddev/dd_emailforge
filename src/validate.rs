@@ -322,6 +322,15 @@ fn opt(v: &Option<String>) -> &str {
     v.as_deref().unwrap_or("")
 }
 
+fn check_border_sides(report: &mut ValidateReport, field: &str, value: &Option<String>) {
+    let Some(v) = value.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    if let Err(e) = crate::border::Sides::from_storage(v) {
+        report.errors.push(format!("{field} {e}"));
+    }
+}
+
 fn check_padding(report: &mut ValidateReport, field: &str, value: &Option<String>) {
     let Some(v) = value.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
         return;
@@ -360,7 +369,7 @@ fn check_button_inner_padding_vs_width(report: &mut ValidateReport, btn: &crate:
     let border_h = btn
         .border
         .as_deref()
-        .map(crate::padding::border_horizontal_px)
+        .map(|b| crate::border::horizontal_px(b, btn.border_sides.as_deref()))
         .unwrap_or(0.0);
     if width_px - inner_h - border_h <= 0.0 {
         report.errors.push(format!(
@@ -418,6 +427,7 @@ fn walk_section(
         opt(&section.background_color),
     );
     check_padding(report, "mj-section.padding", &section.padding);
+    check_border_sides(report, "mj-section.border_sides", &section.border_sides);
     check_unit(report, "mj-section.border_radius", &section.border_radius);
     check_unit(report, "mj-section.gutter", &section.gutter);
     check_opt_one_of(
@@ -471,6 +481,7 @@ fn walk_wrapper(
         opt(&wrapper.background_color),
     );
     check_padding(report, "mj-wrapper.padding", &wrapper.padding);
+    check_border_sides(report, "mj-wrapper.border_sides", &wrapper.border_sides);
     check_unit(report, "mj-wrapper.border_radius", &wrapper.border_radius);
     check_unit(report, "mj-wrapper.gap", &wrapper.gap);
     check_opt_one_of(
@@ -553,7 +564,13 @@ fn walk_column(
         opt(&col.inner_background_color),
     );
     check_padding(report, "mj-column.padding", &col.padding);
+    check_border_sides(report, "mj-column.border_sides", &col.border_sides);
     check_unit(report, "mj-column.border_radius", &col.border_radius);
+    check_border_sides(
+        report,
+        "mj-column.inner_border_sides",
+        &col.inner_border_sides,
+    );
     check_opt_one_of(
         report,
         "mj-column.vertical_align",
@@ -640,6 +657,7 @@ fn walk_column_child(
             check_padding(report, "mj-button.padding", &btn.padding);
             check_padding(report, "mj-button.inner_padding", &btn.inner_padding);
             check_button_inner_padding_vs_width(report, btn);
+            check_border_sides(report, "mj-button.border_sides", &btn.border_sides);
             check_unit(report, "mj-button.border_radius", &btn.border_radius);
             check_unit(report, "mj-button.font_size", &btn.font_size);
             check_unit(report, "mj-button.height", &btn.height);
@@ -667,6 +685,7 @@ fn walk_column_child(
                 relative_images,
             );
             check_padding(report, "mj-image.padding", &img.padding);
+            check_border_sides(report, "mj-image.border_sides", &img.border_sides);
             check_unit(report, "mj-image.border_radius", &img.border_radius);
             check_unit(report, "mj-image.height", &img.height);
             check_opt_one_of(report, "mj-image.target", &img.target, &["_blank", "_self"]);
@@ -1558,6 +1577,19 @@ mod tests {
         });
         let r = validate_template(&t);
         assert!(r.ok(), "{:?}", r.errors);
+    }
+
+    #[test]
+    fn unknown_border_sides_is_error() {
+        let t = template_with_button(MjButton {
+            content: "Go".into(),
+            href: "https://example.com".into(),
+            border: Some("1px solid #000".into()),
+            border_sides: Some("top,foo".into()),
+            ..Default::default()
+        });
+        let r = validate_template(&t);
+        assert!(report_has(&r, "mj-button.border_sides"), "{:?}", r.errors);
     }
 
     #[test]

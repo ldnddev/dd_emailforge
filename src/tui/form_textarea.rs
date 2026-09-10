@@ -55,17 +55,71 @@ pub(super) fn textarea_max_rows_for_window(content_height: u16) -> u16 {
 }
 
 pub(super) fn textarea_visual_line_count(value: &str, wrap_width: Option<u16>) -> usize {
-    let Some(width) = wrap_width.map(|w| w.max(1) as usize) else {
-        return input_lines_preserve(value).len().max(1);
-    };
-    input_lines_preserve(value)
+    visual_lines(value, wrap_width).len().max(1)
+}
+
+/// One on-screen row after wrapping at `wrap_width` columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct VisualLine {
+    pub start: usize,
+    pub len: usize,
+}
+
+pub(super) fn visual_lines(value: &str, wrap_width: Option<u16>) -> Vec<VisualLine> {
+    let chars: Vec<char> = value.chars().collect();
+    let width = wrap_width.map(|w| w.max(1) as usize);
+    if chars.is_empty() {
+        return vec![VisualLine { start: 0, len: 0 }];
+    }
+    let mut lines = Vec::new();
+    let mut i = 0;
+    let mut row_start = 0;
+    while i < chars.len() {
+        if chars[i] == '\n' {
+            lines.push(VisualLine {
+                start: row_start,
+                len: i - row_start,
+            });
+            i += 1;
+            row_start = i;
+            continue;
+        }
+        if let Some(w) = width {
+            if i - row_start == w {
+                lines.push(VisualLine {
+                    start: row_start,
+                    len: w,
+                });
+                row_start = i;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    lines.push(VisualLine {
+        start: row_start,
+        len: chars.len() - row_start,
+    });
+    lines
+}
+
+fn visual_row_for_cursor(lines: &[VisualLine], cursor_pos: usize) -> usize {
+    lines
         .iter()
-        .map(|line| {
-            let chars = line.chars().count();
-            chars.div_ceil(width).max(1)
-        })
-        .sum::<usize>()
-        .max(1)
+        .rposition(|line| line.start <= cursor_pos)
+        .unwrap_or(0)
+}
+
+/// Wrap width and whether a scrollbar column is reserved for `rect`.
+pub(super) fn textarea_wrap_for_rect(value: &str, rect: Rect) -> (u16, bool) {
+    let visible = rect.height.max(1) as usize;
+    let full = rect.width.max(1);
+    let needs_scroll = visual_lines(value, Some(full)).len() > visible && rect.width > 1;
+    if needs_scroll {
+        (full.saturating_sub(1).max(1), true)
+    } else {
+        (full, false)
+    }
 }
 
 pub(super) fn render_textarea_display_window(
@@ -73,13 +127,12 @@ pub(super) fn render_textarea_display_window(
     cursor_pos: usize,
     focused: bool,
     visible_rows: usize,
+    wrap_width: Option<u16>,
 ) -> (String, usize, usize) {
     let visible_rows = visible_rows.max(1);
-    let mut lines = input_lines_preserve(value);
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-    let cursor_row = textarea_cursor_row(value, cursor_pos).min(lines.len().saturating_sub(1));
+    let lines = visual_lines(value, wrap_width);
+    let chars: Vec<char> = value.chars().collect();
+    let cursor_row = visual_row_for_cursor(&lines, cursor_pos).min(lines.len().saturating_sub(1));
     let start = if focused {
         cursor_row.saturating_sub(visible_rows.saturating_sub(1))
     } else {
@@ -88,7 +141,7 @@ pub(super) fn render_textarea_display_window(
     let end = (start + visible_rows).min(lines.len());
     let mut display = Vec::with_capacity(visible_rows);
     for line in lines.iter().take(end).skip(start) {
-        display.push(line.clone());
+        display.push(chars.iter().skip(line.start).take(line.len).collect());
     }
     while display.len() < visible_rows {
         display.push(String::new());
@@ -143,49 +196,84 @@ pub(super) fn render_textarea_scrollbar(
     }
 }
 
-pub(super) fn textarea_cursor_row(value: &str, cursor_pos: usize) -> usize {
-    value
-        .chars()
-        .take(cursor_pos.min(value.chars().count()))
-        .filter(|c| *c == '\n')
-        .count()
+pub(super) fn textarea_cursor_row(
+    value: &str,
+    cursor_pos: usize,
+    wrap_width: Option<u16>,
+) -> usize {
+    let lines = visual_lines(value, wrap_width);
+    visual_row_for_cursor(&lines, cursor_pos).min(lines.len().saturating_sub(1))
 }
 
-pub(super) fn textarea_cursor_col(value: &str, cursor_pos: usize) -> usize {
-    let mut col = 0;
-    for c in value.chars().take(cursor_pos.min(value.chars().count())) {
-        if c == '\n' {
-            col = 0;
-        } else {
-            col += 1;
-        }
-    }
-    col
+pub(super) fn textarea_cursor_col(
+    value: &str,
+    cursor_pos: usize,
+    wrap_width: Option<u16>,
+) -> usize {
+    let lines = visual_lines(value, wrap_width);
+    let row = visual_row_for_cursor(&lines, cursor_pos);
+    cursor_pos.saturating_sub(lines[row].start)
 }
 
 pub(super) fn textarea_move_cursor_vertical(
     value: &str,
     cursor_pos: usize,
     row_delta: isize,
+    wrap_width: Option<u16>,
 ) -> usize {
-    let lines = input_lines_preserve(value);
-    let current_row = textarea_cursor_row(value, cursor_pos).min(lines.len().saturating_sub(1));
-    let current_col = textarea_cursor_col(value, cursor_pos);
-    let target_row = current_row
+    let lines = visual_lines(value, wrap_width);
+    let row = visual_row_for_cursor(&lines, cursor_pos).min(lines.len().saturating_sub(1));
+    let col = cursor_pos.saturating_sub(lines[row].start);
+    let target_row = row
         .saturating_add_signed(row_delta)
         .min(lines.len().saturating_sub(1));
-    cursor_from_row_col(&lines, target_row, current_col)
+    let line = lines[target_row];
+    line.start + col.min(line.len)
 }
 
-fn cursor_from_row_col(lines: &[String], row: usize, col: usize) -> usize {
-    let mut pos = 0;
-    for (i, line) in lines.iter().enumerate() {
-        if i == row {
-            return pos + col.min(line.chars().count());
-        }
-        pos += line.chars().count() + 1;
+pub(super) fn textarea_home(value: &str, cursor_pos: usize, wrap_width: Option<u16>) -> usize {
+    let lines = visual_lines(value, wrap_width);
+    let row = visual_row_for_cursor(&lines, cursor_pos);
+    lines[row].start
+}
+
+pub(super) fn textarea_end(value: &str, cursor_pos: usize, wrap_width: Option<u16>) -> usize {
+    let lines = visual_lines(value, wrap_width);
+    let row = visual_row_for_cursor(&lines, cursor_pos);
+    let line = lines[row];
+    if line.len == 0 {
+        return line.start;
     }
-    pos
+    let soft = row + 1 < lines.len() && lines[row + 1].start == line.start + line.len;
+    if soft {
+        line.start + line.len - 1
+    } else {
+        line.start + line.len
+    }
+}
+
+/// Map a click in the visible text rect to a char cursor index.
+pub(super) fn textarea_cursor_from_click(
+    value: &str,
+    wrap_width: Option<u16>,
+    first_visible_row: usize,
+    local_x: u16,
+    local_y: u16,
+) -> usize {
+    let lines = visual_lines(value, wrap_width);
+    let row = first_visible_row
+        .saturating_add(local_y as usize)
+        .min(lines.len().saturating_sub(1));
+    let line = lines[row];
+    line.start + (local_x as usize).min(line.len)
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TextareaHit {
+    pub rect: Rect,
+    pub field_idx: usize,
+    pub first_visible_row: usize,
+    pub wrap_width: u16,
 }
 
 pub(super) fn auto_scroll_for_focus(state: &editform::EditFormState, current_scroll: u16) -> u16 {
@@ -198,13 +286,6 @@ pub(super) fn auto_scroll_for_focus(state: &editform::EditFormState, current_scr
     } else {
         current_scroll
     }
-}
-
-pub(super) fn input_lines_preserve(value: &str) -> Vec<String> {
-    if value.is_empty() {
-        return vec![String::new()];
-    }
-    value.split('\n').map(str::to_string).collect()
 }
 
 pub(super) fn insert_char(value: &str, cursor_pos: usize, ch: char) -> (String, usize) {
@@ -222,4 +303,68 @@ pub(super) fn delete_char_before(value: &str, cursor_pos: usize) -> (String, usi
     }
     chars.remove(pos - 1);
     (chars.into_iter().collect(), pos - 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wrap_splits_long_line() {
+        let lines = visual_lines("abcdefghij", Some(4));
+        assert_eq!(
+            lines,
+            vec![
+                VisualLine { start: 0, len: 4 },
+                VisualLine { start: 4, len: 4 },
+                VisualLine { start: 8, len: 2 },
+            ]
+        );
+        assert_eq!(visual_lines("abcd", Some(4)).len(), 1);
+        assert_eq!(visual_lines("ab\ncd", Some(4)).len(), 2);
+        assert_eq!(visual_lines("ab\n", None).len(), 2);
+    }
+
+    #[test]
+    fn home_end_logical_line() {
+        let v = "hello\nworld";
+        assert_eq!(textarea_home(v, 8, None), 6);
+        assert_eq!(textarea_end(v, 8, None), 11);
+        assert_eq!(textarea_home(v, 2, None), 0);
+        assert_eq!(textarea_end(v, 2, None), 5);
+    }
+
+    #[test]
+    fn home_end_wrapped_line() {
+        let v = "abcdefghij";
+        assert_eq!(textarea_home(v, 5, Some(4)), 4);
+        assert_eq!(textarea_end(v, 5, Some(4)), 7);
+        assert_eq!(textarea_home(v, 9, Some(4)), 8);
+        assert_eq!(textarea_end(v, 9, Some(4)), 10);
+    }
+
+    #[test]
+    fn click_sets_cursor() {
+        let v = "abcdefghij";
+        assert_eq!(textarea_cursor_from_click(v, Some(4), 0, 2, 0), 2);
+        assert_eq!(textarea_cursor_from_click(v, Some(4), 0, 1, 1), 5);
+        assert_eq!(textarea_cursor_from_click(v, Some(4), 0, 9, 2), 10);
+    }
+
+    #[test]
+    fn vertical_move_follows_wrap() {
+        let v = "abcdefghij";
+        assert_eq!(textarea_move_cursor_vertical(v, 1, 1, Some(4)), 5);
+        assert_eq!(textarea_move_cursor_vertical(v, 5, -1, Some(4)), 1);
+        assert_eq!(textarea_move_cursor_vertical("a\nb\nc", 0, 1, None), 2);
+    }
+
+    #[test]
+    fn display_window_wraps() {
+        let (display, first, total) =
+            render_textarea_display_window("abcdefghij", 0, true, 2, Some(4));
+        assert_eq!(total, 3);
+        assert_eq!(first, 0);
+        assert_eq!(display, "abcd\nefgh");
+    }
 }

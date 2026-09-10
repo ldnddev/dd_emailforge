@@ -167,6 +167,10 @@ pub(super) struct App {
     form_textarea_expanded: bool,
     /// Draw-time hit targets for `[Expand]` on textarea field labels.
     form_expand_hits: RefCell<Vec<(usize, Rect)>>,
+    /// Draw-time hit targets for checkbox options: (rect, field_idx, option_idx).
+    form_checkbox_hits: RefCell<Vec<(Rect, usize, usize)>>,
+    /// Draw-time hit targets for textarea inner text (click-to-place cursor).
+    form_textarea_hits: RefCell<Vec<form_textarea::TextareaHit>>,
 }
 
 impl App {
@@ -220,6 +224,8 @@ impl App {
             paused_form_edit_modal: None,
             form_textarea_expanded: false,
             form_expand_hits: RefCell::new(Vec::new()),
+            form_checkbox_hits: RefCell::new(Vec::new()),
+            form_textarea_hits: RefCell::new(Vec::new()),
         }
     }
 

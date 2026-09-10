@@ -45,7 +45,13 @@ fields:
     required: false
     type: string
     hint: "CSS border, e.g. 1px solid #000"
-    maps_to: "mj-section border"
+    maps_to: "mj-section border (or border-top/right/bottom/left when sides is a subset)"
+  - id: border_sides
+    required: false
+    type: string
+    hint: "all, or a list of top, right, bottom, left"
+    default: all
+    maps_to: "omitted → border=; subset → border-{side}="
   - id: border_radius
     required: false
     type: string

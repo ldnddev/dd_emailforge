@@ -151,13 +151,14 @@ impl App {
         };
 
         let focused_idx = state.focused_field;
-        let (field_id, is_enum, is_textarea, is_subform, accepts_text) =
+        let (field_id, is_enum, is_textarea, is_subform, is_checkboxes, accepts_text) =
             match state.form.fields.get(focused_idx) {
                 Some(f) => (
                     f.id,
                     matches!(f.kind, editform::FieldKind::Enum { .. }),
                     matches!(f.kind, editform::FieldKind::Textarea { .. }),
                     matches!(f.kind, editform::FieldKind::SubForm { .. }),
+                    matches!(f.kind, editform::FieldKind::Checkboxes { .. }),
                     matches!(
                         f.kind,
                         editform::FieldKind::Text { .. }
@@ -326,6 +327,8 @@ impl App {
             KeyCode::Left => {
                 if is_enum {
                     state.cycle_enum(false);
+                } else if is_checkboxes {
+                    state.move_checkbox_cursor(-1);
                 } else if *cursor_pos > 0 {
                     *cursor_pos -= 1;
                 }
@@ -333,6 +336,8 @@ impl App {
             KeyCode::Right => {
                 if is_enum {
                     state.cycle_enum(true);
+                } else if is_checkboxes {
+                    state.move_checkbox_cursor(1);
                 } else {
                     let len = state.get(field_id).chars().count();
                     if *cursor_pos < len {
@@ -342,8 +347,9 @@ impl App {
             }
             KeyCode::Up => {
                 if is_textarea {
+                    let wrap = textarea_wrap_width(&self.form_textarea_hits, focused_idx);
                     *cursor_pos =
-                        textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, -1);
+                        textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, -1, wrap);
                 } else {
                     state.focus_prev();
                     *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
@@ -355,8 +361,9 @@ impl App {
             }
             KeyCode::Down => {
                 if is_textarea {
+                    let wrap = textarea_wrap_width(&self.form_textarea_hits, focused_idx);
                     *cursor_pos =
-                        textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, 1);
+                        textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, 1, wrap);
                 } else {
                     state.focus_next();
                     *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
@@ -367,10 +374,33 @@ impl App {
                 }
             }
             KeyCode::PageUp if is_textarea => {
-                *cursor_pos = textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, -10);
+                let wrap = textarea_wrap_width(&self.form_textarea_hits, focused_idx);
+                *cursor_pos =
+                    textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, -10, wrap);
             }
             KeyCode::PageDown if is_textarea => {
-                *cursor_pos = textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, 10);
+                let wrap = textarea_wrap_width(&self.form_textarea_hits, focused_idx);
+                *cursor_pos =
+                    textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, 10, wrap);
+            }
+            KeyCode::Home if is_textarea => {
+                let wrap = textarea_wrap_width(&self.form_textarea_hits, focused_idx);
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    *cursor_pos = 0;
+                } else {
+                    *cursor_pos = textarea_home(state.get(field_id), *cursor_pos, wrap);
+                }
+            }
+            KeyCode::End if is_textarea => {
+                let wrap = textarea_wrap_width(&self.form_textarea_hits, focused_idx);
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    *cursor_pos = state.get(field_id).chars().count();
+                } else {
+                    *cursor_pos = textarea_end(state.get(field_id), *cursor_pos, wrap);
+                }
+            }
+            KeyCode::Char(' ') if is_checkboxes => {
+                state.toggle_focused_checkbox();
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 if accepts_text {
@@ -437,10 +467,13 @@ impl App {
                             _ => None,
                         };
                         if let Some(field_id) = field_id {
+                            let wrap =
+                                textarea_wrap_width(&self.form_textarea_hits, state.focused_field);
                             *cursor_pos = crate::tui::form_textarea::textarea_move_cursor_vertical(
                                 state.get(field_id),
                                 *cursor_pos,
                                 delta,
+                                wrap,
                             );
                         }
                     }
@@ -456,6 +489,19 @@ impl App {
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 let (x, y) = (m.column, m.row);
+                let checkbox_hit = self
+                    .form_checkbox_hits
+                    .borrow()
+                    .iter()
+                    .find(|(r, _, _)| contains_rect(*r, x, y))
+                    .map(|(_, field_idx, option_idx)| (*field_idx, *option_idx));
+                if let Some((field_idx, option_idx)) = checkbox_hit {
+                    if let Some(Modal::FormEdit { state, .. }) = self.modal.as_mut() {
+                        state.focused_field = field_idx;
+                        state.toggle_checkbox_at(option_idx);
+                    }
+                    return Some(ModalResult::Continue);
+                }
                 let expand_hit = self
                     .form_expand_hits
                     .borrow()
@@ -476,6 +522,31 @@ impl App {
                     self.form_textarea_expanded = true;
                     return Some(ModalResult::Continue);
                 }
+                let textarea_hit = self
+                    .form_textarea_hits
+                    .borrow()
+                    .iter()
+                    .find(|h| contains_rect(h.rect, x, y))
+                    .copied();
+                if let Some(hit) = textarea_hit {
+                    if let Some(Modal::FormEdit {
+                        state, cursor_pos, ..
+                    }) = self.modal.as_mut()
+                    {
+                        state.focused_field = hit.field_idx;
+                        let value = state.get(state.form.fields[hit.field_idx].id);
+                        let local_x = x.saturating_sub(hit.rect.x);
+                        let local_y = y.saturating_sub(hit.rect.y);
+                        *cursor_pos = crate::tui::form_textarea::textarea_cursor_from_click(
+                            value,
+                            Some(hit.wrap_width),
+                            hit.first_visible_row,
+                            local_x,
+                            local_y,
+                        );
+                    }
+                    return Some(ModalResult::Continue);
+                }
                 if self.form_textarea_expanded {
                     return Some(ModalResult::Continue);
                 }
@@ -491,6 +562,7 @@ impl App {
                     }) = self.modal.as_mut()
                     {
                         state.focused_field = idx;
+                        state.checkbox_cursor = 0;
                         *cursor_pos = state.get(state.form.fields[idx].id).chars().count();
                     }
                 }
@@ -499,6 +571,17 @@ impl App {
         }
         Some(ModalResult::Continue)
     }
+}
+
+fn textarea_wrap_width(
+    hits: &std::cell::RefCell<Vec<crate::tui::form_textarea::TextareaHit>>,
+    field_idx: usize,
+) -> Option<u16> {
+    hits.borrow()
+        .iter()
+        .find(|h| h.field_idx == field_idx)
+        .map(|h| h.wrap_width)
+        .filter(|&w| w > 0)
 }
 
 fn contains_rect(area: Rect, x: u16, y: u16) -> bool {

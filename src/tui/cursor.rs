@@ -337,6 +337,7 @@ fn body_node_to_form(n: &BodyNode) -> EditFormState {
             st.set("gutter", opt_get(&s.gutter));
             st.set("direction", opt_get(&s.direction));
             st.set("border", opt_get(&s.border));
+            st.set("border_sides", sides_to_form(&s.border_sides));
             st.set("border_radius", opt_get(&s.border_radius));
             st.set("full_width", bool_str(s.full_width));
             st.set("css_class", opt_get(&s.css_class));
@@ -351,6 +352,7 @@ fn body_node_to_form(n: &BodyNode) -> EditFormState {
             st.set("padding", opt_get(&w.padding));
             st.set("gap", opt_get(&w.gap));
             st.set("border", opt_get(&w.border));
+            st.set("border_sides", sides_to_form(&w.border_sides));
             st.set("border_radius", opt_get(&w.border_radius));
             st.set("full_width", bool_str(w.full_width));
             st.set("css_class", opt_get(&w.css_class));
@@ -376,6 +378,7 @@ fn apply_body_node(n: &mut BodyNode, state: &EditFormState) -> Result<()> {
             s.gutter = opt_set_unit(state, "gutter")?;
             s.direction = opt_set(state, "direction");
             s.border = opt_set(state, "border");
+            s.border_sides = opt_set_sides(state, "border_sides")?;
             s.border_radius = opt_set_unit(state, "border_radius")?;
             s.full_width = parse_bool(state.get("full_width"))?;
             s.css_class = opt_set(state, "css_class");
@@ -389,6 +392,7 @@ fn apply_body_node(n: &mut BodyNode, state: &EditFormState) -> Result<()> {
             w.padding = opt_set_padding(state)?;
             w.gap = opt_set_unit(state, "gap")?;
             w.border = opt_set(state, "border");
+            w.border_sides = opt_set_sides(state, "border_sides")?;
             w.border_radius = opt_set_unit(state, "border_radius")?;
             w.full_width = parse_bool(state.get("full_width"))?;
             w.css_class = opt_set(state, "css_class");
@@ -410,8 +414,10 @@ fn column_to_form(c: &MjColumn) -> EditFormState {
     st.set("padding", opt_get(&c.padding));
     st.set("inner_background_color", opt_get(&c.inner_background_color));
     st.set("border", opt_get(&c.border));
+    st.set("border_sides", sides_to_form(&c.border_sides));
     st.set("border_radius", opt_get(&c.border_radius));
     st.set("inner_border", opt_get(&c.inner_border));
+    st.set("inner_border_sides", sides_to_form(&c.inner_border_sides));
     st.set("inner_border_radius", opt_get(&c.inner_border_radius));
     st.set("vertical_align", opt_get(&c.vertical_align));
     st.set("css_class", opt_get(&c.css_class));
@@ -424,8 +430,10 @@ fn apply_column(c: &mut MjColumn, state: &EditFormState) -> Result<()> {
     c.padding = opt_set_padding(state)?;
     c.inner_background_color = opt_set(state, "inner_background_color");
     c.border = opt_set(state, "border");
+    c.border_sides = opt_set_sides(state, "border_sides")?;
     c.border_radius = opt_set_unit(state, "border_radius")?;
     c.inner_border = opt_set(state, "inner_border");
+    c.inner_border_sides = opt_set_sides(state, "inner_border_sides")?;
     c.inner_border_radius = opt_set_unit(state, "inner_border_radius")?;
     c.vertical_align = opt_set(state, "vertical_align");
     c.css_class = opt_set(state, "css_class");
@@ -518,6 +526,7 @@ fn leaf_to_form(c: &ColumnChild) -> EditFormState {
             st.set("font_weight", opt_get(&b.font_weight));
             st.set("font_style", opt_get(&b.font_style));
             st.set("border", opt_get(&b.border));
+            st.set("border_sides", sides_to_form(&b.border_sides));
             st.set("border_radius", opt_get(&b.border_radius));
             st.set("inner_padding", opt_get(&b.inner_padding));
             st.set("width", opt_get(&b.width));
@@ -544,6 +553,7 @@ fn leaf_to_form(c: &ColumnChild) -> EditFormState {
             st.set("align", align_str(i.align));
             st.set("fluid_on_mobile", bool_str(i.fluid_on_mobile));
             st.set("border", opt_get(&i.border));
+            st.set("border_sides", sides_to_form(&i.border_sides));
             st.set("border_radius", opt_get(&i.border_radius));
             st.set("padding", opt_get(&i.padding));
             st.set("target", opt_get(&i.target));
@@ -623,6 +633,7 @@ fn apply_leaf(c: &mut ColumnChild, state: &EditFormState) -> Result<()> {
             b.font_weight = opt_set(state, "font_weight");
             b.font_style = opt_set(state, "font_style");
             b.border = opt_set(state, "border");
+            b.border_sides = opt_set_sides(state, "border_sides")?;
             b.border_radius = opt_set_unit(state, "border_radius")?;
             b.inner_padding = opt_set_named_padding(state, "inner_padding")?;
             b.width = opt_set(state, "width");
@@ -648,6 +659,7 @@ fn apply_leaf(c: &mut ColumnChild, state: &EditFormState) -> Result<()> {
             i.align = parse_align(state.get("align"))?;
             i.fluid_on_mobile = parse_bool(state.get("fluid_on_mobile"))?;
             i.border = opt_set(state, "border");
+            i.border_sides = opt_set_sides(state, "border_sides")?;
             i.border_radius = opt_set_unit(state, "border_radius")?;
             i.padding = opt_set_padding(state)?;
             i.target = opt_set(state, "target");
@@ -1021,6 +1033,18 @@ fn parse_social_items(items: Option<&Vec<EditFormState>>) -> Result<Vec<MjSocial
 
 fn opt_get(v: &Option<String>) -> String {
     v.clone().unwrap_or_default()
+}
+
+fn sides_to_form(v: &Option<String>) -> String {
+    crate::border::Sides::from_storage(v.as_deref().unwrap_or(""))
+        .map(|s| s.to_form())
+        .unwrap_or_else(|_| "all".to_string())
+}
+
+fn opt_set_sides(state: &EditFormState, id: &str) -> Result<Option<String>> {
+    let t = state.get(id).trim();
+    let sides = crate::border::Sides::from_storage(t).map_err(|e| anyhow!("{id} {e}"))?;
+    Ok(sides.to_storage())
 }
 
 fn opt_set(state: &EditFormState, id: &str) -> Option<String> {

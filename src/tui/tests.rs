@@ -694,6 +694,41 @@ fn form_save_rejects_invalid_padding() {
 }
 
 #[test]
+fn border_sides_checkboxes_toggle_and_save() {
+    let mut app = app_with_one_column();
+    let idx = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-section"))
+        .expect("section row");
+    app.selected_row = idx;
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    let field = form_state(&app)
+        .field_index("border_sides")
+        .expect("border_sides field");
+    form_state_mut(&mut app).focused_field = field;
+    form_state_mut(&mut app).checkbox_cursor = 0;
+    assert_eq!(form_state(&app).get("border_sides"), "all");
+    send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Char(' '), KeyModifiers::NONE);
+    assert_eq!(form_state(&app).get("border_sides"), "top");
+    send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Char(' '), KeyModifiers::NONE);
+    assert_eq!(form_state(&app).get("border_sides"), "top,bottom");
+    form_state_mut(&mut app).set("border", "1px solid #000");
+    send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+    assert!(app.modal.is_none());
+    match &app.template.as_ref().unwrap().body.nodes[0] {
+        crate::model::BodyNode::MjSection(s) => {
+            assert_eq!(s.border.as_deref(), Some("1px solid #000"));
+            assert_eq!(s.border_sides.as_deref(), Some("top,bottom"));
+        }
+        other => panic!("expected section, got {other:?}"),
+    }
+}
+
+#[test]
 fn insert_wraps_leaf_on_empty_body() {
     let mut app = app_with_template();
     app.selected_row = 2;
@@ -1051,6 +1086,98 @@ fn textarea_expand_click_opens_from_hit_target() {
     send_mouse(&mut app, MouseEventKind::Down(MouseButton::Left), 42, 10);
     assert!(app.form_textarea_expanded);
     assert_eq!(form_state(&app).focused().map(|f| f.id), Some("content"));
+}
+
+#[test]
+fn textarea_home_end_move_cursor() {
+    let mut app = app_with_mj_text_form();
+    form_state_mut(&mut app).set("content", "hello\nworld");
+    if let Some(Modal::FormEdit { cursor_pos, .. }) = app.modal.as_mut() {
+        *cursor_pos = 8;
+    }
+    send_key(&mut app, KeyCode::Home, KeyModifiers::NONE);
+    match &app.modal {
+        Some(Modal::FormEdit { cursor_pos, .. }) => assert_eq!(*cursor_pos, 6),
+        other => panic!("expected FormEdit, got {other:?}"),
+    }
+    send_key(&mut app, KeyCode::End, KeyModifiers::NONE);
+    match &app.modal {
+        Some(Modal::FormEdit { cursor_pos, .. }) => assert_eq!(*cursor_pos, 11),
+        other => panic!("expected FormEdit, got {other:?}"),
+    }
+    send_key(&mut app, KeyCode::Home, KeyModifiers::CONTROL);
+    match &app.modal {
+        Some(Modal::FormEdit { cursor_pos, .. }) => assert_eq!(*cursor_pos, 0),
+        other => panic!("expected FormEdit, got {other:?}"),
+    }
+    send_key(&mut app, KeyCode::End, KeyModifiers::CONTROL);
+    match &app.modal {
+        Some(Modal::FormEdit { cursor_pos, .. }) => assert_eq!(*cursor_pos, 11),
+        other => panic!("expected FormEdit, got {other:?}"),
+    }
+}
+
+#[test]
+fn textarea_click_places_cursor() {
+    let mut app = app_with_mj_text_form();
+    form_state_mut(&mut app).set("content", "abcdefghij");
+    let field_idx = form_state(&app)
+        .form
+        .fields
+        .iter()
+        .position(|f| f.id == "content")
+        .expect("content field");
+    app.form_textarea_hits
+        .borrow_mut()
+        .push(super::form_textarea::TextareaHit {
+            rect: Rect {
+                x: 10,
+                y: 5,
+                width: 20,
+                height: 4,
+            },
+            field_idx,
+            first_visible_row: 0,
+            wrap_width: 20,
+        });
+    send_mouse(&mut app, MouseEventKind::Down(MouseButton::Left), 13, 5);
+    match &app.modal {
+        Some(Modal::FormEdit { cursor_pos, .. }) => assert_eq!(*cursor_pos, 3),
+        other => panic!("expected FormEdit, got {other:?}"),
+    }
+}
+
+#[test]
+fn expanded_textarea_click_places_cursor() {
+    let mut app = app_with_mj_text_form();
+    send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+    assert!(app.form_textarea_expanded);
+    form_state_mut(&mut app).set("content", "abcdefghij");
+    let field_idx = form_state(&app)
+        .form
+        .fields
+        .iter()
+        .position(|f| f.id == "content")
+        .expect("content field");
+    app.form_textarea_hits
+        .borrow_mut()
+        .push(super::form_textarea::TextareaHit {
+            rect: Rect {
+                x: 4,
+                y: 4,
+                width: 40,
+                height: 10,
+            },
+            field_idx,
+            first_visible_row: 0,
+            wrap_width: 40,
+        });
+    send_mouse(&mut app, MouseEventKind::Down(MouseButton::Left), 6, 4);
+    match &app.modal {
+        Some(Modal::FormEdit { cursor_pos, .. }) => assert_eq!(*cursor_pos, 2),
+        other => panic!("expected FormEdit, got {other:?}"),
+    }
+    assert!(app.form_textarea_expanded);
 }
 
 #[test]

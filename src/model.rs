@@ -270,6 +270,8 @@ pub struct MjSection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_sides: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_radius: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gutter: Option<String>,
@@ -302,9 +304,13 @@ pub struct MjColumn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_sides: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_radius: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inner_border: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inner_border_sides: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inner_border_radius: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -323,6 +329,8 @@ pub struct MjWrapper {
     pub padding: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_sides: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_radius: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -412,6 +420,8 @@ pub struct MjButton {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_sides: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_radius: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inner_padding: Option<String>,
@@ -458,6 +468,8 @@ pub struct MjImage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_sides: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_radius: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -482,6 +494,7 @@ impl Default for MjImage {
             align: None,
             fluid_on_mobile: true,
             border: None,
+            border_sides: None,
             border_radius: None,
             title: None,
             padding: None,

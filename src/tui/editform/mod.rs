@@ -38,6 +38,12 @@ pub enum FieldKind {
         options: &'static [&'static str],
         default: &'static str,
     },
+    /// Compact checkbox row. `options` is `(id, label)`. Value is a
+    /// comma-separated list of checked ids (border sides use `"all"`).
+    Checkboxes {
+        options: &'static [(&'static str, &'static str)],
+        default: &'static str,
+    },
     SubForm {
         template: &'static EditForm,
         min_items: usize,
@@ -61,6 +67,8 @@ pub struct EditFormState {
     pub selected_sub_item: HashMap<String, usize>,
     pub focused_field: usize,
     pub textarea_cursor: (usize, usize),
+    /// Index of the focused checkbox inside a `Checkboxes` field.
+    pub checkbox_cursor: usize,
 }
 
 impl EditFormState {
@@ -79,6 +87,9 @@ impl EditFormState {
                 FieldKind::Enum { default, .. } => {
                     values.insert(field.id.to_string(), default.to_string());
                 }
+                FieldKind::Checkboxes { default, .. } => {
+                    values.insert(field.id.to_string(), default.to_string());
+                }
                 FieldKind::SubForm { .. } => {
                     sub_state.insert(field.id.to_string(), Vec::new());
                     selected_sub_item.insert(field.id.to_string(), 0);
@@ -92,6 +103,7 @@ impl EditFormState {
             selected_sub_item,
             focused_field: 0,
             textarea_cursor: (0, 0),
+            checkbox_cursor: 0,
         }
     }
 
@@ -141,6 +153,7 @@ impl EditFormState {
             .unwrap_or(0);
         self.focused_field = visible[(current_pos + 1) % visible.len()];
         self.textarea_cursor = (0, 0);
+        self.checkbox_cursor = 0;
     }
 
     pub fn focus_prev(&mut self) {
@@ -159,6 +172,7 @@ impl EditFormState {
         };
         self.focused_field = visible[prev_pos];
         self.textarea_cursor = (0, 0);
+        self.checkbox_cursor = 0;
     }
 
     pub fn focused(&self) -> Option<&FormField> {
@@ -190,8 +204,73 @@ impl EditFormState {
         self.set(field.id, options[next].to_string());
     }
 
+    pub fn move_checkbox_cursor(&mut self, delta: i32) {
+        let Some(field) = self.focused() else {
+            return;
+        };
+        let FieldKind::Checkboxes { options, .. } = &field.kind else {
+            return;
+        };
+        let n = options.len() as i32;
+        if n == 0 {
+            return;
+        }
+        self.checkbox_cursor = (self.checkbox_cursor as i32 + delta).rem_euclid(n) as usize;
+    }
+
+    pub fn toggle_focused_checkbox(&mut self) {
+        let Some(field) = self.focused() else {
+            return;
+        };
+        let FieldKind::Checkboxes { options, .. } = &field.kind else {
+            return;
+        };
+        let Some(&(id, _)) = options.get(self.checkbox_cursor) else {
+            return;
+        };
+        let current = self.get(field.id).to_string();
+        let next = crate::border::Sides::from_storage(&current)
+            .unwrap_or(crate::border::Sides::ALL)
+            .toggle(id);
+        let field_id = field.id.to_string();
+        self.set(&field_id, next.to_form());
+    }
+
+    pub fn toggle_checkbox_at(&mut self, option_idx: usize) {
+        self.checkbox_cursor = option_idx;
+        self.toggle_focused_checkbox();
+    }
+
     #[cfg(test)]
     pub fn field_index(&self, id: &str) -> Option<usize> {
         self.form.fields.iter().position(|f| f.id == id)
     }
+}
+
+/// Hit rects for each checkbox inside `origin`, left-to-right with a 2-col gap.
+pub fn checkbox_item_rects(
+    options: &[(&str, &str)],
+    origin: ratatui::layout::Rect,
+) -> Vec<ratatui::layout::Rect> {
+    let mut x = origin.x;
+    let mut out = Vec::with_capacity(options.len());
+    for (i, &(_, label)) in options.iter().enumerate() {
+        if i > 0 {
+            x = x.saturating_add(2);
+        }
+        let w = 4u16.saturating_add(label.len() as u16);
+        let used = x.saturating_sub(origin.x);
+        if used >= origin.width {
+            break;
+        }
+        let width = w.min(origin.width.saturating_sub(used));
+        out.push(ratatui::layout::Rect {
+            x,
+            y: origin.y,
+            width,
+            height: 1,
+        });
+        x = x.saturating_add(w);
+    }
+    out
 }

@@ -66,6 +66,36 @@ const fn border_field() -> FormField {
     }
 }
 
+const fn border_sides_field() -> FormField {
+    FormField {
+        id: "border_sides",
+        label: "Border sides",
+        kind: FieldKind::Checkboxes {
+            options: crate::border::OPTIONS,
+            default: "all",
+        },
+        required: false,
+        visible_when: None,
+        hint: Some("Space: toggle  ·  ←/→: move"),
+        placeholder: None,
+    }
+}
+
+const fn inner_border_sides_field() -> FormField {
+    FormField {
+        id: "inner_border_sides",
+        label: "Inner border sides",
+        kind: FieldKind::Checkboxes {
+            options: crate::border::OPTIONS,
+            default: "all",
+        },
+        required: false,
+        visible_when: None,
+        hint: Some("Space: toggle  ·  ←/→: move"),
+        placeholder: None,
+    }
+}
+
 const fn border_radius_field() -> FormField {
     hinted(
         "border_radius",
@@ -396,6 +426,7 @@ pub static SECTION_FORM: EditForm = EditForm {
         hinted("gutter", "Gutter", crate::padding::UNIT_HINT, "e.g. 4%"),
         direction_field(),
         border_field(),
+        border_sides_field(),
         border_radius_field(),
         f(
             "full_width",
@@ -428,6 +459,7 @@ pub static COLUMN_FORM: EditForm = EditForm {
             false,
         ),
         border_field(),
+        border_sides_field(),
         border_radius_field(),
         f(
             "inner_border",
@@ -435,6 +467,7 @@ pub static COLUMN_FORM: EditForm = EditForm {
             FieldKind::Text { default: "" },
             false,
         ),
+        inner_border_sides_field(),
         hinted(
             "inner_border_radius",
             "Inner border radius",
@@ -466,6 +499,7 @@ pub static WRAPPER_FORM: EditForm = EditForm {
             crate::padding::UNIT_PLACEHOLDER,
         ),
         border_field(),
+        border_sides_field(),
         border_radius_field(),
         f(
             "full_width",
@@ -702,6 +736,7 @@ pub static BUTTON_FORM: EditForm = EditForm {
             false,
         ),
         border_field(),
+        border_sides_field(),
         border_radius_field(),
         inner_padding_field(),
         f("width", "Width", FieldKind::Text { default: "" }, false),
@@ -785,6 +820,7 @@ pub static IMAGE_FORM: EditForm = EditForm {
             false,
         ),
         border_field(),
+        border_sides_field(),
         border_radius_field(),
         padding_field(),
         f(
