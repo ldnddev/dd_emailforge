@@ -7,6 +7,12 @@ insert:
     full_width: false
     children: []
 fields:
+  - id: label
+    required: false
+    type: string
+    hint: "Tree and blueprint only — not in the email"
+    example: "footer"
+    maps_to: "TUI author label (not emitted)"
   - id: background_color
     required: false
     type: string

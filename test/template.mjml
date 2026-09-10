@@ -46,6 +46,15 @@
           Read more
         </mj-button>
       </mj-column>
+      <mj-group>
+        <mj-column>
+          <mj-text>
+            Write something.
+          </mj-text>
+        </mj-column>
+      </mj-group>
     </mj-section>
+    <mj-wrapper>
+    </mj-wrapper>
   </mj-body>
 </mjml>

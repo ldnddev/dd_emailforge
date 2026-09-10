@@ -329,6 +329,7 @@ fn body_node_to_form(n: &BodyNode) -> EditFormState {
     match n {
         BodyNode::MjSection(s) => {
             let mut st = EditFormState::new(&editform::SECTION_FORM);
+            st.set("label", opt_get(&s.label));
             st.set("background_color", opt_get(&s.background_color));
             st.set("background_url", opt_get(&s.background_url));
             st.set("background_size", opt_get(&s.background_size));
@@ -345,6 +346,7 @@ fn body_node_to_form(n: &BodyNode) -> EditFormState {
         }
         BodyNode::MjWrapper(w) => {
             let mut st = EditFormState::new(&editform::WRAPPER_FORM);
+            st.set("label", opt_get(&w.label));
             st.set("background_color", opt_get(&w.background_color));
             st.set("background_url", opt_get(&w.background_url));
             st.set("background_size", opt_get(&w.background_size));
@@ -370,6 +372,7 @@ fn body_node_to_form(n: &BodyNode) -> EditFormState {
 fn apply_body_node(n: &mut BodyNode, state: &EditFormState) -> Result<()> {
     match n {
         BodyNode::MjSection(s) => {
+            s.label = opt_set(state, "label");
             s.background_color = opt_set(state, "background_color");
             s.background_url = opt_set(state, "background_url");
             s.background_size = opt_set(state, "background_size");
@@ -385,6 +388,7 @@ fn apply_body_node(n: &mut BodyNode, state: &EditFormState) -> Result<()> {
             Ok(())
         }
         BodyNode::MjWrapper(w) => {
+            w.label = opt_set(state, "label");
             w.background_color = opt_set(state, "background_color");
             w.background_url = opt_set(state, "background_url");
             w.background_size = opt_set(state, "background_size");

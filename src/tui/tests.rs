@@ -656,6 +656,107 @@ fn formedit_padding_shows_expected_units() {
 }
 
 #[test]
+fn formedit_shows_brand_placeholders_on_text() {
+    let app = app_with_mj_text_form();
+    let brand = app.template.as_ref().unwrap().brand.clone();
+    match &app.modal {
+        Some(Modal::FormEdit { state, .. }) => {
+            let color = state
+                .form
+                .fields
+                .iter()
+                .find(|f| f.id == "color")
+                .expect("color");
+            assert_eq!(
+                color.resolved_placeholder(Some(&brand)).as_deref(),
+                Some(brand.text_color.as_str())
+            );
+            let font = state
+                .form
+                .fields
+                .iter()
+                .find(|f| f.id == "font_family")
+                .expect("font_family");
+            assert_eq!(
+                font.resolved_placeholder(Some(&brand)).as_deref(),
+                Some(brand.font_family.as_str())
+            );
+        }
+        other => panic!("expected FormEdit, got {other:?}"),
+    }
+}
+
+#[test]
+fn formedit_shows_brand_placeholders_on_button() {
+    let mut app = app_with_one_column();
+    let col = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-column"))
+        .expect("column row");
+    app.selected_row = col;
+    app.insert_kind(super::component_kind::ComponentKind::MjButton);
+    let btn = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-button"))
+        .expect("mj-button row");
+    app.selected_row = btn;
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    let brand = app.template.as_ref().unwrap().brand.clone();
+    match &app.modal {
+        Some(Modal::FormEdit { state, .. }) => {
+            let bg = state
+                .form
+                .fields
+                .iter()
+                .find(|f| f.id == "background_color")
+                .expect("background_color");
+            assert_eq!(
+                bg.resolved_placeholder(Some(&brand)).as_deref(),
+                Some(brand.button_background.as_str())
+            );
+            let color = state
+                .form
+                .fields
+                .iter()
+                .find(|f| f.id == "color")
+                .expect("color");
+            assert_eq!(
+                color.resolved_placeholder(Some(&brand)).as_deref(),
+                Some(brand.button_color.as_str())
+            );
+        }
+        other => panic!("expected FormEdit, got {other:?}"),
+    }
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw form");
+    let text = buffer_text(&terminal);
+    assert!(text.contains(&brand.button_background), "{text}");
+    assert!(text.contains("empty uses brand"), "{text}");
+}
+
+#[test]
+fn formedit_body_background_placeholder_is_brand() {
+    let mut app = app_with_template();
+    app.selected_row = 2;
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(form_state(&app).form.title, "mj-body");
+    let brand = app.template.as_ref().unwrap().brand.clone();
+    let bg = form_state(&app)
+        .form
+        .fields
+        .iter()
+        .find(|f| f.id == "background_color")
+        .expect("background_color");
+    assert_eq!(
+        bg.resolved_placeholder(Some(&brand)).as_deref(),
+        Some(brand.background_color.as_str())
+    );
+}
+
+#[test]
 fn form_save_normalizes_unitless_padding() {
     let mut app = app_with_one_column();
     let idx = app
@@ -691,6 +792,33 @@ fn form_save_rejects_invalid_padding() {
     send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
     assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
     assert!(app.toasts.iter().any(|t| t.message.contains("padding")));
+}
+
+#[test]
+fn section_label_saves_and_shows_in_tree() {
+    let mut app = app_with_one_column();
+    let idx = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-section"))
+        .expect("section row");
+    app.selected_row = idx;
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(form_state(&app).form.fields[0].id, "label");
+    form_state_mut(&mut app).set("label", "footer");
+    send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+    assert!(app.modal.is_none());
+    match &app.template.as_ref().unwrap().body.nodes[0] {
+        crate::model::BodyNode::MjSection(s) => {
+            assert_eq!(s.label.as_deref(), Some("footer"));
+        }
+        other => panic!("expected section, got {other:?}"),
+    }
+    let labels: Vec<_> = app.tree_rows().iter().map(|r| r.label.clone()).collect();
+    assert!(
+        labels.iter().any(|l| l.contains("mj-section  footer")),
+        "{labels:?}"
+    );
 }
 
 #[test]

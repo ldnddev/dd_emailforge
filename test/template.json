@@ -70,6 +70,7 @@
       },
       {
         "type": "mj-section",
+        "label": "footer",
         "full_width": false,
         "children": [
           {
@@ -101,8 +102,26 @@
                 "text_transform": "uppercase"
               }
             ]
+          },
+          {
+            "type": "mj-group",
+            "children": [
+              {
+                "components": [
+                  {
+                    "type": "mj-text",
+                    "content": "Write something."
+                  }
+                ]
+              }
+            ]
           }
         ]
+      },
+      {
+        "type": "mj-wrapper",
+        "full_width": false,
+        "children": []
       }
     ]
   }

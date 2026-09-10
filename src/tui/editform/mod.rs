@@ -10,7 +10,7 @@ pub struct EditForm {
     pub fields: &'static [FormField],
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct FormField {
     pub id: &'static str,
     pub label: &'static str,
@@ -20,9 +20,46 @@ pub struct FormField {
     pub visible_when: Option<FieldPredicate>,
     pub hint: Option<&'static str>,
     pub placeholder: Option<&'static str>,
+    /// When the field is empty, FormEdit shows this brand token as the
+    /// placeholder. Empty still means inherit `mj-attributes` (not a snapshot).
+    pub brand_placeholder: Option<BrandPlaceholder>,
 }
 
-#[derive(Debug)]
+/// Brand values shown as placeholders on empty inheriting fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrandPlaceholder {
+    FontFamily,
+    TextColor,
+    Background,
+    ButtonBackground,
+    ButtonColor,
+}
+
+impl BrandPlaceholder {
+    pub fn value<'a>(self, brand: &'a crate::model::Brand) -> &'a str {
+        match self {
+            Self::FontFamily => brand.font_family.as_str(),
+            Self::TextColor => brand.text_color.as_str(),
+            Self::Background => brand.background_color.as_str(),
+            Self::ButtonBackground => brand.button_background.as_str(),
+            Self::ButtonColor => brand.button_color.as_str(),
+        }
+    }
+}
+
+impl FormField {
+    pub fn resolved_placeholder(&self, brand: Option<&crate::model::Brand>) -> Option<String> {
+        if let (Some(token), Some(brand)) = (self.brand_placeholder, brand) {
+            let v = token.value(brand).trim();
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+        self.placeholder.map(str::to_string)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum FieldKind {
     Text {
         default: &'static str,
@@ -51,7 +88,7 @@ pub enum FieldKind {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum FieldPredicate {
     FieldEquals {
         other_id: &'static str,

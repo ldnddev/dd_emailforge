@@ -10,7 +10,66 @@ const fn f(id: &'static str, label: &'static str, kind: FieldKind, required: boo
         visible_when: None,
         hint: None,
         placeholder: None,
+        brand_placeholder: None,
     }
+}
+
+const fn with_brand(mut field: FormField, token: BrandPlaceholder) -> FormField {
+    field.brand_placeholder = Some(token);
+    if field.hint.is_none() {
+        field.hint = Some("empty uses brand");
+    }
+    field
+}
+
+const fn font_family_field() -> FormField {
+    with_brand(
+        f(
+            "font_family",
+            "Font family",
+            FieldKind::Text { default: "" },
+            false,
+        ),
+        BrandPlaceholder::FontFamily,
+    )
+}
+
+const fn text_color_field() -> FormField {
+    with_brand(
+        f("color", "Color", FieldKind::Text { default: "" }, false),
+        BrandPlaceholder::TextColor,
+    )
+}
+
+const fn button_color_field() -> FormField {
+    with_brand(
+        f("color", "Color", FieldKind::Text { default: "" }, false),
+        BrandPlaceholder::ButtonColor,
+    )
+}
+
+const fn button_bg_field() -> FormField {
+    with_brand(
+        f(
+            "background_color",
+            "Background",
+            FieldKind::Text { default: "" },
+            false,
+        ),
+        BrandPlaceholder::ButtonBackground,
+    )
+}
+
+const fn body_bg_field() -> FormField {
+    with_brand(
+        f(
+            "background_color",
+            "Background",
+            FieldKind::Text { default: "" },
+            false,
+        ),
+        BrandPlaceholder::Background,
+    )
 }
 
 const fn padding_field() -> FormField {
@@ -22,6 +81,7 @@ const fn padding_field() -> FormField {
         visible_when: None,
         hint: Some(crate::padding::HINT),
         placeholder: Some(crate::padding::PLACEHOLDER),
+        brand_placeholder: None,
     }
 }
 
@@ -34,6 +94,7 @@ const fn inner_padding_field() -> FormField {
         visible_when: None,
         hint: Some(crate::padding::HINT),
         placeholder: Some("e.g. 12px 24px"),
+        brand_placeholder: None,
     }
 }
 
@@ -51,6 +112,7 @@ const fn hinted(
         visible_when: None,
         hint: Some(hint),
         placeholder: Some(placeholder),
+        brand_placeholder: None,
     }
 }
 
@@ -63,6 +125,7 @@ const fn border_field() -> FormField {
         visible_when: None,
         hint: Some("CSS border, e.g. 1px solid #000"),
         placeholder: Some("e.g. 1px solid #000000"),
+        brand_placeholder: None,
     }
 }
 
@@ -78,6 +141,7 @@ const fn border_sides_field() -> FormField {
         visible_when: None,
         hint: Some("Space: toggle  ·  ←/→: move"),
         placeholder: None,
+        brand_placeholder: None,
     }
 }
 
@@ -93,6 +157,7 @@ const fn inner_border_sides_field() -> FormField {
         visible_when: None,
         hint: Some("Space: toggle  ·  ←/→: move"),
         placeholder: None,
+        brand_placeholder: None,
     }
 }
 
@@ -103,6 +168,19 @@ const fn border_radius_field() -> FormField {
         crate::padding::UNIT_HINT,
         crate::padding::UNIT_PLACEHOLDER,
     )
+}
+
+const fn author_label_field() -> FormField {
+    FormField {
+        id: "label",
+        label: "Label",
+        kind: FieldKind::Text { default: "" },
+        required: false,
+        visible_when: None,
+        hint: Some("Tree and blueprint only — not in the email"),
+        placeholder: Some("e.g. hero, features, footer"),
+        brand_placeholder: None,
+    }
 }
 
 const fn css_class_field() -> FormField {
@@ -126,6 +204,7 @@ const fn hamburger_only(id: &'static str, label: &'static str, kind: FieldKind) 
         }),
         hint: None,
         placeholder: None,
+        brand_placeholder: None,
     }
 }
 
@@ -208,6 +287,7 @@ const fn background_size_field() -> FormField {
         visible_when: None,
         hint: Some("auto, cover, contain, or px/%"),
         placeholder: Some("e.g. cover"),
+        brand_placeholder: None,
     }
 }
 
@@ -399,20 +479,13 @@ pub static BRAND_FORM: EditForm = EditForm {
 
 pub static BODY_FORM: EditForm = EditForm {
     title: "mj-body",
-    fields: &[
-        f(
-            "background_color",
-            "Background",
-            FieldKind::Text { default: "" },
-            false,
-        ),
-        css_class_field(),
-    ],
+    fields: &[body_bg_field(), css_class_field()],
 };
 
 pub static SECTION_FORM: EditForm = EditForm {
     title: "mj-section",
     fields: &[
+        author_label_field(),
         f(
             "background_color",
             "Background",
@@ -482,6 +555,7 @@ pub static COLUMN_FORM: EditForm = EditForm {
 pub static WRAPPER_FORM: EditForm = EditForm {
     title: "mj-wrapper",
     fields: &[
+        author_label_field(),
         f(
             "background_color",
             "Background",
@@ -609,12 +683,7 @@ pub static TEXT_FORM: EditForm = EditForm {
             FieldKind::Text { default: "" },
             false,
         ),
-        f(
-            "font_family",
-            "Font family",
-            FieldKind::Text { default: "" },
-            false,
-        ),
+        font_family_field(),
         f(
             "font_weight",
             "Font weight",
@@ -639,7 +708,7 @@ pub static TEXT_FORM: EditForm = EditForm {
             crate::padding::UNIT_HINT,
             "e.g. 1.5  or  24px",
         ),
-        f("color", "Color", FieldKind::Text { default: "" }, false),
+        text_color_field(),
         padding_field(),
         hinted(
             "letter_spacing",
@@ -689,13 +758,8 @@ pub static BUTTON_FORM: EditForm = EditForm {
             },
             true,
         ),
-        f(
-            "background_color",
-            "Background",
-            FieldKind::Text { default: "" },
-            false,
-        ),
-        f("color", "Color", FieldKind::Text { default: "" }, false),
+        button_bg_field(),
+        button_color_field(),
         f(
             "align",
             "Align",
@@ -705,12 +769,7 @@ pub static BUTTON_FORM: EditForm = EditForm {
             },
             false,
         ),
-        f(
-            "font_family",
-            "Font family",
-            FieldKind::Text { default: "" },
-            false,
-        ),
+        font_family_field(),
         hinted(
             "font_size",
             "Font size",
@@ -1023,12 +1082,7 @@ pub static NAVBAR_LINK_FORM: EditForm = EditForm {
             true,
         ),
         f("color", "Color", FieldKind::Text { default: "" }, false),
-        f(
-            "font_family",
-            "Font family",
-            FieldKind::Text { default: "" },
-            false,
-        ),
+        font_family_field(),
         hinted(
             "font_size",
             "Font size",
@@ -1072,12 +1126,7 @@ pub static ACCORDION_FORM: EditForm = EditForm {
     fields: &[
         f("border", "Border", FieldKind::Text { default: "" }, false),
         padding_field(),
-        f(
-            "font_family",
-            "Font family",
-            FieldKind::Text { default: "" },
-            false,
-        ),
+        font_family_field(),
         f(
             "icon_position",
             "Icon position",
@@ -1208,6 +1257,7 @@ pub static TABLE_FORM: EditForm = EditForm {
             visible_when: None,
             hint: Some("Rows only: <tr><td>…</td></tr>. mj-table already emits <table>."),
             placeholder: Some("<tr><td></td></tr>"),
+            brand_placeholder: None,
         },
         f(
             "font_size",
@@ -1215,12 +1265,7 @@ pub static TABLE_FORM: EditForm = EditForm {
             FieldKind::Text { default: "" },
             false,
         ),
-        f(
-            "font_family",
-            "Font family",
-            FieldKind::Text { default: "" },
-            false,
-        ),
+        font_family_field(),
         hinted(
             "line_height",
             "Line height",

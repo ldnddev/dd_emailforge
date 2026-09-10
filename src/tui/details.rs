@@ -244,16 +244,25 @@ fn locate_nested_child<'a>(
 fn body_node_summary(n: &BodyNode) -> Vec<String> {
     match n {
         BodyNode::MjSection(s) => {
-            let mut lines = vec![format!("children: {}", s.children.len())];
+            let mut lines = Vec::new();
+            if let Some(label) = s.label.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                lines.push(format!("label: {label}"));
+            }
+            lines.push(format!("children: {}", s.children.len()));
             if let Some(bg) = &s.background_color {
                 lines.push(format!("background: {bg}"));
             }
             lines
         }
-        BodyNode::MjWrapper(w) => vec![
-            format!("wrapper children: {}", w.children.len()),
-            format!("full_width: {}", w.full_width),
-        ],
+        BodyNode::MjWrapper(w) => {
+            let mut lines = Vec::new();
+            if let Some(label) = w.label.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                lines.push(format!("label: {label}"));
+            }
+            lines.push(format!("wrapper children: {}", w.children.len()));
+            lines.push(format!("full_width: {}", w.full_width));
+            lines
+        }
         BodyNode::MjHero(h) => {
             let mut lines = vec![format!("hero children: {}", h.children.len())];
             if let Some(url) = &h.background_url {
@@ -426,17 +435,32 @@ fn paint_body_node(
 
 fn paint_section_inner(s: &MjSection, path: &[Step], w: usize) -> Canvas {
     let mut inner = Canvas::new(w);
+    let mut y = 0;
+    if let Some(label) = s.label.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let id = TreeId::Path(path.to_vec());
+        inner.fill_line(0, 0, w, label, Some(&id));
+        y = 1;
+    }
     if s.children.is_empty() {
-        inner.fill_line(0, 0, w, "(no columns)", None);
+        inner.fill_line(0, y, w, "(no columns)", None);
         return inner;
     }
-    paint_section_slots(&mut inner, &s.children, path, w);
+    paint_section_slots(&mut inner, &s.children, path, w, y);
     inner
 }
 
 fn paint_wrapper_inner(wpr: &MjWrapper, path: &[Step], w: usize) -> Canvas {
     let mut inner = Canvas::new(w);
-    inner.fill_line(0, 0, w, "mj-wrapper", None);
+    let caption = match wpr
+        .label
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(l) => format!("mj-wrapper  {l}"),
+        None => "mj-wrapper".into(),
+    };
+    inner.fill_line(0, 0, w, &caption, None);
     let mut y = 1;
     if wpr.children.is_empty() {
         inner.fill_line(0, y, w, "(empty)", None);
@@ -511,7 +535,13 @@ fn paint_article_box(
     )
 }
 
-fn paint_section_slots(c: &mut Canvas, children: &[SectionChild], path: &[Step], w: usize) {
+fn paint_section_slots(
+    c: &mut Canvas,
+    children: &[SectionChild],
+    path: &[Step],
+    w: usize,
+    y: usize,
+) {
     let n = children.len();
     if n == 0 {
         return;
@@ -530,7 +560,7 @@ fn paint_section_slots(c: &mut Canvas, children: &[SectionChild], path: &[Step],
         p.push(Step::SectionChild(i));
         parts.push(paint_slot(ch, p, widths[i]));
     }
-    blit_row(c, &parts, &widths, 0);
+    blit_row(c, &parts, &widths, y);
 }
 
 fn paint_slot(ch: &SectionChild, path: Vec<Step>, w: usize) -> Canvas {
@@ -964,6 +994,38 @@ mod tests {
             &h.id,
             TreeId::Path(p) if matches!(p.as_slice(), [Step::BodyNode(_)])
         )));
+    }
+
+    #[test]
+    fn blueprint_shows_section_and_wrapper_labels() {
+        let mut t = Template::minimal();
+        t.body.nodes.push(BodyNode::MjSection(MjSection {
+            label: Some("hero".into()),
+            children: vec![SectionChild::MjColumn(MjColumn {
+                components: vec![ColumnChild::MjText(MjText {
+                    content: "Hi".into(),
+                    ..Default::default()
+                })],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        t.body.nodes.push(BodyNode::MjWrapper(MjWrapper {
+            label: Some("footer".into()),
+            ..Default::default()
+        }));
+        let (lines, _) = details_view(Some(&t), Some(&body_row()), 48);
+        let joined = lines.join("\n");
+        assert!(joined.contains("hero"), "{joined}");
+        assert!(joined.contains("mj-wrapper  footer"), "{joined}");
+        let section_row = TreeRow {
+            id: TreeId::Path(vec![Step::BodyNode(0)]),
+            label: "1. mj-section  hero".into(),
+            prefix: String::new(),
+            expandable: true,
+        };
+        let summary = details_lines(Some(&t), Some(&section_row), 40);
+        assert!(summary.iter().any(|l| l == "label: hero"), "{summary:?}");
     }
 
     #[test]

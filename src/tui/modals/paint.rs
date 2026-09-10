@@ -550,9 +550,10 @@ impl App {
             editform::FieldKind::Text { .. } | editform::FieldKind::Url { .. } => {
                 let value = state.get(field.id);
                 if value.is_empty() {
-                    if let Some(placeholder) = field.placeholder {
+                    let brand = self.template.as_ref().map(|t| &t.brand);
+                    if let Some(placeholder) = field.resolved_placeholder(brand) {
                         frame.render_widget(
-                            Paragraph::new(placeholder.to_string()).style(
+                            Paragraph::new(placeholder).style(
                                 Style::default()
                                     .fg(self.theme.text_disabled)
                                     .bg(self.theme.modal_background),

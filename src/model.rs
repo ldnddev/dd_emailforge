@@ -263,6 +263,9 @@ pub enum SocialNetwork {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct MjSection {
+    /// Author-only name for the tree and blueprint. Never emitted to MJML.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -323,6 +326,9 @@ pub struct MjColumn {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct MjWrapper {
+    /// Author-only name for the tree and blueprint. Never emitted to MJML.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

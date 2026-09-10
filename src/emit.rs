@@ -1549,6 +1549,28 @@ mod tests {
     }
 
     #[test]
+    fn author_label_is_not_emitted() {
+        let mut t = Template::minimal();
+        t.preheader.clear();
+        t.body.nodes.push(BodyNode::MjSection(MjSection {
+            label: Some("hero".into()),
+            children: vec![SectionChild::MjColumn(MjColumn::default())],
+            ..Default::default()
+        }));
+        t.body.nodes.push(BodyNode::MjWrapper(MjWrapper {
+            label: Some("footer".into()),
+            ..Default::default()
+        }));
+        let mjml = export(&t);
+        assert!(!mjml.contains("hero"), "{mjml}");
+        assert!(!mjml.contains("footer"), "{mjml}");
+        assert!(!mjml.contains("label="), "{mjml}");
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains("\"label\":\"hero\""), "{json}");
+        assert!(json.contains("\"label\":\"footer\""), "{json}");
+    }
+
+    #[test]
     fn p1_layout_attrs_emit_when_set() {
         let mut t = Template::minimal();
         t.preheader.clear();

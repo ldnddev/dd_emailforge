@@ -115,7 +115,7 @@ fn push_body_node(
             let expanded = expandable && !collapsed.contains(&id);
             rows.push(row(
                 id.clone(),
-                format!("{number}. mj-section"),
+                numbered_kind(number, "mj-section", s.label.as_deref()),
                 ancestors_last,
                 is_last,
                 expandable,
@@ -131,7 +131,7 @@ fn push_body_node(
             let expanded = expandable && !collapsed.contains(&id);
             rows.push(row(
                 id.clone(),
-                format!("{number}. mj-wrapper"),
+                numbered_kind(number, "mj-wrapper", w.label.as_deref()),
                 ancestors_last,
                 is_last,
                 expandable,
@@ -456,6 +456,13 @@ fn column_child_label(c: &ColumnChild) -> String {
     }
 }
 
+fn numbered_kind(number: usize, kind: &str, label: Option<&str>) -> String {
+    match label.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(l) => format!("{number}. {kind}  {l}"),
+        None => format!("{number}. {kind}"),
+    }
+}
+
 fn row(
     id: TreeId,
     label: String,
@@ -601,7 +608,8 @@ impl App {
 mod tests {
     use super::*;
     use crate::model::{
-        BodyNode, ColumnChild, EmailHeader, MjColumn, MjSection, MjText, SectionChild, Template,
+        BodyNode, ColumnChild, EmailHeader, MjColumn, MjSection, MjText, MjWrapper, SectionChild,
+        Template,
     };
 
     #[test]
@@ -678,5 +686,25 @@ mod tests {
         collapsed.insert(TreeId::Body);
         let rows = build_tree(Some(&t), &collapsed);
         assert_eq!(rows.len(), 3);
+    }
+
+    #[test]
+    fn section_and_wrapper_labels_show_in_tree() {
+        let mut t = Template::minimal();
+        t.body.nodes.push(BodyNode::MjSection(MjSection {
+            label: Some("hero".into()),
+            ..Default::default()
+        }));
+        t.body.nodes.push(BodyNode::MjWrapper(MjWrapper {
+            label: Some("footer".into()),
+            ..Default::default()
+        }));
+        t.body.nodes.push(BodyNode::MjSection(MjSection::default()));
+        let rows = build_tree(Some(&t), &HashSet::new());
+        let labels: Vec<_> = rows.iter().map(|r| r.label.as_str()).collect();
+        assert!(labels.contains(&"1. mj-section  hero"), "{labels:?}");
+        assert!(labels.contains(&"2. mj-wrapper  footer"), "{labels:?}");
+        assert!(labels.contains(&"3. mj-section"), "{labels:?}");
+        assert!(!labels.contains(&"3. mj-section  "), "{labels:?}");
     }
 }
