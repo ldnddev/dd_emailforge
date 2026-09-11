@@ -54,12 +54,6 @@ pub fn horizontal_px(value: &str) -> Option<f64> {
     }
 }
 
-/// Left+right border widths in `px` from a CSS border string (`1px solid #000`).
-/// `none` / empty / unparseable → 0. All four sides.
-pub fn border_horizontal_px(value: &str) -> f64 {
-    crate::border::horizontal_px(value, None)
-}
-
 fn normalize_token(token: &str) -> Result<String, String> {
     if token == "0" {
         return Ok("0".to_string());
@@ -170,8 +164,6 @@ mod tests {
         assert_eq!(horizontal_px("1px 2px 3px 4px").unwrap(), 6.0);
         assert!(horizontal_px("10%").is_none());
         assert!(horizontal_px("").is_none());
-        assert_eq!(border_horizontal_px("1px solid #ff0000"), 2.0);
-        assert_eq!(border_horizontal_px("none"), 0.0);
     }
 
     #[test]
