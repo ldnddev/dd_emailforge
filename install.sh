@@ -217,11 +217,13 @@ path_note() {
 # Returns 1 if the archive is missing (caller may fall back to source).
 install_prebuilt_into() {
     local tmp="$1"
-    local target archive url sum_url src_bin src_theme
+    local target archive url sumfile sum_url src_bin src_theme
     target="$(detect_target)"
     archive="${BIN_NAME}-${target}.tar.gz"
+    sumfile="${BIN_NAME}-${target}.sha256"
     url="$(release_base_url)/${archive}"
-    sum_url="${url}.sha256"
+    # taiki-e/upload-rust-binary-action names checksums $bin-$target.sha256
+    sum_url="$(release_base_url)/${sumfile}"
 
     cyan "Looking for $archive ($(normalize_version "$VERSION"))…"
 
@@ -230,8 +232,8 @@ install_prebuilt_into() {
         return 1
     fi
 
-    if curl_get "$tmp/${archive}.sha256" "$sum_url"; then
-        verify_sha256 "$tmp" "$archive" "${archive}.sha256" || {
+    if curl_get "$tmp/$sumfile" "$sum_url"; then
+        verify_sha256 "$tmp" "$archive" "$sumfile" || {
             red "Checksum mismatch for $archive — aborting."
             exit 1
         }
