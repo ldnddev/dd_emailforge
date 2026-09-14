@@ -7,12 +7,20 @@ Terminal-UI email template builder. Edit a typed `template.json`, export strict 
 ## Install
 
 ```bash
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash
 ```
 
-Binary → `$HOME/.local/bin/dd_emailforge`. Theme → `$HOME/.config/ldnddev/` (existing theme is left alone). Honors `PREFIX`, `BIN_DIR`, `CONFIG_DIR`, `XDG_CONFIG_HOME`.
+That detects OS/arch, downloads the matching GitHub Release (`linux`/`darwin` × `x86_64`/`aarch64`), and installs `$HOME/.local/bin/dd_emailforge`. Theme → `$HOME/.config/ldnddev/` (existing theme is left alone). Pin a version with `VERSION=v0.5.0`. Uninstall: pipe the same script with `bash -s -- uninstall`.
 
-MJML 5 needs **Node 20+**. `init` pins `mjml ^5.4.0` in `package.json` but does not run `npm install`. Skip that step if `mjml` is already on your PATH.
+From a clone (builds with cargo):
+
+```bash
+./install.sh
+./install.sh --from-release   # use the GitHub package even from a clone
+./install.sh uninstall
+```
+
+Honors `PREFIX`, `BIN_DIR`, `CONFIG_DIR`, `XDG_CONFIG_HOME`. MJML 5 needs **Node 20+**. `init` pins `mjml ^5.4.0` in `package.json` but does not run `npm install`. Skip that step if `mjml` is already on your PATH.
 
 ## Quick start
 

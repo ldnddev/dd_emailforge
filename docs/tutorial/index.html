@@ -173,19 +173,24 @@
 
       <h2 id="prereqs">Prerequisites</h2>
       <ul>
-        <li><strong>Rust / cargo</strong> — to build the binary (<code>./install.sh</code> calls <code>cargo build --release</code>).</li>
+        <li><strong>curl</strong> (and <code>tar</code>) — for the one-line install, which downloads a prebuilt package for your OS/arch.</li>
         <li><strong>Node 20+</strong> — MJML 5’s compiler. Needed to preview or export HTML.</li>
         <li>Optional: a global <code>mjml</code> on your <code>PATH</code>. If you have it, skip <code>npm install</code> after <code>init</code>.</li>
+        <li>Optional: <strong>Rust / cargo</strong> — only if you install from a clone (<code>./install.sh</code> then calls <code>cargo build --release</code>) or if no GitHub Release package exists for your machine.</li>
       </ul>
 
       <h2 id="install">Install</h2>
-      <p>From a clone of this repo:</p>
-      <pre>./install.sh</pre>
-      <p>That builds release, installs <code>$HOME/.local/bin/dd_emailforge</code>, writes the default theme to <code>~/.config/ldnddev/dd_emailforge_theme.yml</code> (only if none exists), and creates <code>~/.config/ldnddev/dd_emailforge/templates/</code>.</p>
+      <p>Download the package that matches this machine (Linux or macOS, x86_64 or aarch64):</p>
+      <pre>curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash</pre>
+      <p>That installs <code>$HOME/.local/bin/dd_emailforge</code>, writes the default theme to <code>~/.config/ldnddev/dd_emailforge_theme.yml</code> (only if none exists), and creates <code>~/.config/ldnddev/dd_emailforge/templates/</code>. Pin a release with <code>VERSION=v0.5.0</code>.</p>
+      <p>From a clone of this repo (builds with cargo):</p>
+      <pre>./install.sh
+./install.sh --from-release   # GitHub package even from a clone</pre>
       <div class="callout info">
         Override paths with <code>PREFIX</code>, <code>BIN_DIR</code>, or <code>CONFIG_DIR</code>. Honors <code>XDG_CONFIG_HOME</code>. Re-run is safe: an existing theme is left alone; the binary is overwritten.
       </div>
-      <pre>./install.sh uninstall    # binary + theme + empty dirs
+      <pre>curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash -s -- uninstall
+./install.sh uninstall    # same, from a clone
 ./install.sh --help</pre>
       <p>If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it:</p>
       <pre>export PATH="$HOME/.local/bin:$PATH"</pre>
