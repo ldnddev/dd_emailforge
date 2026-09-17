@@ -57,11 +57,11 @@ fn f2_opens_and_closes_with_f2_and_esc() {
 fn f2_scroll_keys_update_theme_scroll() {
     let mut app = chrome_app();
     send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
-    app.theme_scroll_max = 5;
+    assert!(app.theme_editor.is_some());
     send_key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    assert_eq!(app.theme_scroll, 1);
-    send_key(&mut app, KeyCode::Char('g'), KeyModifiers::NONE);
-    assert_eq!(app.theme_scroll, 0);
+    assert_eq!(app.theme_editor.as_ref().unwrap().selected, 1);
+    send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(app.theme_editor.is_none());
 }
 
 #[test]
@@ -1134,8 +1134,7 @@ fn blueprint_paints_section_background_and_keeps_selection_chrome() {
     let cell = &buf[(rect.x + 1, rect.y)];
     assert_eq!(cell.bg, Color::Rgb(0xCC, 0, 0), "email fill should show");
     assert_eq!(
-        cell.fg,
-        app.theme.text_active_focus,
+        cell.fg, app.theme.text_active_focus,
         "selection is chrome fg, not a fill"
     );
     assert_ne!(cell.bg, app.theme.selected_background);

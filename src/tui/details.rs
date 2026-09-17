@@ -935,8 +935,8 @@ fn json_ld_summary(raw: &str) -> String {
 }
 
 fn canvas_colors(t: &Template) -> (Color, Color) {
-    let brand_bg = try_parse_hex_color(&t.brand.background_color)
-        .unwrap_or(Color::Rgb(0xF4, 0xF4, 0xF4));
+    let brand_bg =
+        try_parse_hex_color(&t.brand.background_color).unwrap_or(Color::Rgb(0xF4, 0xF4, 0xF4));
     let brand_fg = try_parse_hex_color(&t.brand.text_color).unwrap_or(Color::Rgb(0x1A, 0x1A, 0x1A));
     let bg = if t.body.background_color.trim().is_empty() {
         brand_bg
@@ -1306,13 +1306,15 @@ mod tests {
             s.background_color = Some("#CC0000".into());
         }
         let (_, hits) = details_view(Some(&t), Some(&body_row()), 48);
-        let section = hit(&hits, |id| {
-            matches!(id, TreeId::Path(p) if p.as_slice() == [Step::BodyNode(0)])
-        });
+        let section = hit(
+            &hits,
+            |id| matches!(id, TreeId::Path(p) if p.as_slice() == [Step::BodyNode(0)]),
+        );
         assert_eq!(section.bg, Some(Color::Rgb(0xCC, 0, 0)));
-        let text = hit(&hits, |id| {
-            matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(0))))
-        });
+        let text = hit(
+            &hits,
+            |id| matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(0)))),
+        );
         assert_eq!(text.bg, Some(Color::Rgb(0xCC, 0, 0)));
         assert_eq!(text.fg, Some(Color::Rgb(0x1A, 0x1A, 0x1A)));
     }
@@ -1321,9 +1323,10 @@ mod tests {
     fn blueprint_button_uses_brand_then_own_colors() {
         let t = sample();
         let (_, hits) = details_view(Some(&t), Some(&body_row()), 48);
-        let btn = hit(&hits, |id| {
-            matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(1))))
-        });
+        let btn = hit(
+            &hits,
+            |id| matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(1)))),
+        );
         assert_eq!(btn.bg, Some(Color::Rgb(0xFF, 0xAF, 0x46)));
         assert_eq!(btn.fg, Some(Color::Rgb(0x0F, 0x11, 0x14)));
 
@@ -1337,9 +1340,10 @@ mod tests {
             }
         }
         let (_, hits) = details_view(Some(&t), Some(&body_row()), 48);
-        let btn = hit(&hits, |id| {
-            matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(1))))
-        });
+        let btn = hit(
+            &hits,
+            |id| matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(1)))),
+        );
         assert_eq!(btn.bg, Some(Color::Rgb(0x00, 0xAA, 0x00)));
         assert_eq!(btn.fg, Some(Color::Rgb(0xFF, 0xFF, 0xFF)));
     }
@@ -1362,9 +1366,10 @@ mod tests {
             )
         });
         assert_eq!(col.bg, Some(Color::Rgb(0x00, 0xAA, 0x00)));
-        let text = hit(&hits, |id| {
-            matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(0))))
-        });
+        let text = hit(
+            &hits,
+            |id| matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(0)))),
+        );
         assert_eq!(text.bg, Some(Color::Rgb(0x00, 0xAA, 0x00)));
     }
 
@@ -1375,9 +1380,10 @@ mod tests {
             s.background_color = Some("not-a-color".into());
         }
         let (_, hits) = details_view(Some(&t), Some(&body_row()), 48);
-        let section = hit(&hits, |id| {
-            matches!(id, TreeId::Path(p) if p.as_slice() == [Step::BodyNode(0)])
-        });
+        let section = hit(
+            &hits,
+            |id| matches!(id, TreeId::Path(p) if p.as_slice() == [Step::BodyNode(0)]),
+        );
         assert_eq!(section.bg, Some(Color::Rgb(0xF4, 0xF4, 0xF4)));
     }
 

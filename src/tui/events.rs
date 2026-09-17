@@ -51,37 +51,18 @@ impl App {
 
         if self.show_theme {
             match evt {
-                Event::Key(k) => match k.code {
-                    KeyCode::F(2) | KeyCode::Esc => {
+                Event::Key(k) => {
+                    if k.code == KeyCode::F(2) {
+                        if let Some(mut editor) = self.theme_editor.take() {
+                            editor.revert();
+                            super::theme::apply_palette(&mut self.theme, &editor.palette);
+                        }
                         self.show_theme = false;
                         self.theme_scroll = 0;
+                    } else if let Some(ek) = map_editor_key(k) {
+                        self.dispatch_theme_editor(ek, k.modifiers.contains(KeyModifiers::SHIFT));
                     }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.theme_scroll = self
-                            .theme_scroll
-                            .saturating_add(1)
-                            .min(self.theme_scroll_max);
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.theme_scroll = self.theme_scroll.saturating_sub(1);
-                    }
-                    KeyCode::PageDown => {
-                        self.theme_scroll = self
-                            .theme_scroll
-                            .saturating_add(10)
-                            .min(self.theme_scroll_max);
-                    }
-                    KeyCode::PageUp => {
-                        self.theme_scroll = self.theme_scroll.saturating_sub(10);
-                    }
-                    KeyCode::Home | KeyCode::Char('g') => {
-                        self.theme_scroll = 0;
-                    }
-                    KeyCode::End | KeyCode::Char('G') => {
-                        self.theme_scroll = self.theme_scroll_max;
-                    }
-                    _ => {}
-                },
+                }
                 Event::Mouse(m) => match m.kind {
                     MouseEventKind::ScrollUp => {
                         self.theme_scroll = self.theme_scroll.saturating_sub(3);
@@ -110,7 +91,13 @@ impl App {
         match evt {
             Event::Key(k) => match k.code {
                 KeyCode::F(1) => self.show_help = true,
-                KeyCode::F(2) => self.show_theme = true,
+                KeyCode::F(2) => {
+                    self.show_theme = true;
+                    self.theme_editor = Some(ldnddev_theme::ThemeEditor::new(
+                        super::theme::palette_from_theme(&self.theme),
+                        super::theme::extra_theme_fields(),
+                    ));
+                }
                 KeyCode::F(3) => self.open_validation_modal(),
                 KeyCode::Char('p') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.begin_preview();
@@ -281,6 +268,64 @@ impl App {
             _ => {}
         }
     }
+
+    fn dispatch_theme_editor(&mut self, ek: ldnddev_theme::EditorKey, shift: bool) {
+        let outcome = {
+            let Some(editor) = self.theme_editor.as_mut() else {
+                return;
+            };
+            editor.handle(ek, shift)
+        };
+        match outcome {
+            ldnddev_theme::EditorOutcome::PaletteChanged => {
+                if let Some(editor) = &self.theme_editor {
+                    super::theme::apply_palette(&mut self.theme, &editor.palette);
+                }
+            }
+            ldnddev_theme::EditorOutcome::RequestSave => {
+                if let Some(editor) = &self.theme_editor {
+                    let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                    if let Ok(path) = ldnddev_theme::save_theme(
+                        &editor.palette,
+                        &root,
+                        "dd_emailforge_theme.yml",
+                        editor.save_target,
+                        ldnddev_theme::default_config_home().as_deref(),
+                        &editor.fields,
+                    ) {
+                        super::theme::apply_palette(&mut self.theme, &editor.palette);
+                        self.theme_source = editor.save_target.label().to_string();
+                        self.theme_editor = None;
+                        self.show_theme = false;
+                        let _ = path;
+                    }
+                }
+            }
+            ldnddev_theme::EditorOutcome::Closed { .. } => {
+                if let Some(mut editor) = self.theme_editor.take() {
+                    editor.revert();
+                    super::theme::apply_palette(&mut self.theme, &editor.palette);
+                }
+                self.show_theme = false;
+            }
+            ldnddev_theme::EditorOutcome::HexError(_) | ldnddev_theme::EditorOutcome::None => {}
+        }
+    }
+}
+
+fn map_editor_key(k: crossterm::event::KeyEvent) -> Option<ldnddev_theme::EditorKey> {
+    Some(match k.code {
+        KeyCode::Up => ldnddev_theme::EditorKey::Up,
+        KeyCode::Down => ldnddev_theme::EditorKey::Down,
+        KeyCode::Left => ldnddev_theme::EditorKey::Left,
+        KeyCode::Right => ldnddev_theme::EditorKey::Right,
+        KeyCode::Tab => ldnddev_theme::EditorKey::Tab,
+        KeyCode::Enter => ldnddev_theme::EditorKey::Enter,
+        KeyCode::Esc => ldnddev_theme::EditorKey::Esc,
+        KeyCode::Backspace => ldnddev_theme::EditorKey::Backspace,
+        KeyCode::Char(c) => ldnddev_theme::EditorKey::Char(c),
+        _ => return None,
+    })
 }
 
 fn contains(area: Rect, x: u16, y: u16) -> bool {

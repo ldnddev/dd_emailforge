@@ -27,15 +27,18 @@
     "css_inline": true
   },
   "body": {
-    "background_color": "#ffffff",
+    "background_color": "#fhfhfh",
     "nodes": [
       {
         "type": "mj-section",
+        "label": "-one",
+        "background_color": "#0000ff",
         "full_width": false,
         "children": [
           {
             "type": "mj-column",
             "width": "100%",
+            "background_color": "#00ffff",
             "components": [
               {
                 "type": "mj-table",
@@ -46,6 +49,80 @@
                 "align": "left",
                 "width": "100%",
                 "border": "1px solid #000000",
+                "padding": "2%",
+                "cellpadding": "1",
+                "cellspacing": "2",
+                "role": "none",
+                "css_class": "table-class"
+              }
+            ]
+          },
+          {
+            "type": "mj-column",
+            "width": "100%",
+            "background_color": "#00ffff",
+            "components": [
+              {
+                "type": "mj-table",
+                "content": "<tr><td>this is a table entry inside a column.</td></tr>",
+                "font_size": "14px",
+                "font_family": "Arial",
+                "color": "#000000",
+                "align": "left",
+                "width": "100%",
+                "border": "1px solid #000000",
+                "padding": "2%",
+                "cellpadding": "1",
+                "cellspacing": "2",
+                "role": "none",
+                "css_class": "table-class"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "mj-section",
+        "label": "-one",
+        "background_color": "#00ff00",
+        "full_width": false,
+        "children": [
+          {
+            "type": "mj-column",
+            "width": "50%",
+            "background_color": "#ff0000",
+            "components": [
+              {
+                "type": "mj-table",
+                "content": "<tr><td>this is a table entry inside a column.</td></tr>",
+                "font_size": "14px",
+                "font_family": "Arial",
+                "color": "#000000",
+                "align": "left",
+                "width": "100%",
+                "border": "1px solid #000000",
+                "padding": "2%",
+                "cellpadding": "1",
+                "cellspacing": "2",
+                "role": "none",
+                "css_class": "table-class"
+              }
+            ]
+          },
+          {
+            "type": "mj-column",
+            "width": "50%",
+            "background_color": "#ffff00",
+            "components": [
+              {
+                "type": "mj-table",
+                "content": "<tr><td>this is a table entry inside a column.</td></tr>",
+                "font_size": "14px",
+                "font_family": "Arial",
+                "color": "#ff0000",
+                "align": "left",
+                "width": "100%",
+                "border": "1px solid #00ffff",
                 "padding": "2%",
                 "cellpadding": "1",
                 "cellspacing": "2",

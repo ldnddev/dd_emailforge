@@ -1,5 +1,5 @@
 //! Frame layout: header, empty body, footer, F1/F2 overlays, toasts.
-use super::details::{readable_fg, DetailHit};
+use super::details::{DetailHit, readable_fg};
 use super::help::{build_help_text, build_theme_text, count_wrapped_lines};
 use super::tree::TreeId;
 use super::*;
@@ -59,11 +59,15 @@ impl App {
         }
 
         if self.show_theme {
-            self.render_scroll_modal(
-                frame,
-                "Theme (F2 / Esc to close, j/k or arrows to scroll)",
-                false,
-            );
+            if let Some(editor) = &self.theme_editor {
+                self.render_theme_editor(frame, editor);
+            } else {
+                self.render_scroll_modal(
+                    frame,
+                    "Theme (F2 / Esc to close, j/k or arrows to scroll)",
+                    false,
+                );
+            }
         }
 
         self.render_toasts(frame, frame.area());
@@ -259,6 +263,68 @@ impl App {
                 self.theme.body_background,
             );
         }
+    }
+
+    fn render_theme_editor(&self, frame: &mut ratatui::Frame, editor: &ldnddev_theme::ThemeEditor) {
+        use ldnddev_theme::{ThemeEditorRow, theme_editor_rows};
+        let area = centered_rect(80, 80, frame.area());
+        frame.render_widget(Clear, area);
+        let rows = theme_editor_rows(&editor.fields);
+        let channel = ["R", "G", "B"][editor.channel.min(2)];
+        let target = editor.save_target.label().to_uppercase();
+        let mut lines = vec![
+            Line::from(format!(
+                "Save: {target} (Tab)   Channel: {channel} ([/])   Y save   R reset   Esc revert"
+            )),
+            Line::from(if editor.editing_hex {
+                format!("Hex: {}█", editor.hex_draft)
+            } else {
+                format!("Hex: {}   Enter / +/- ", editor.hex_draft)
+            }),
+            Line::from(""),
+        ];
+        let view_h = area.height.saturating_sub(6) as usize;
+        let start = rows
+            .iter()
+            .position(|row| match row {
+                ThemeEditorRow::Color(idx) => *idx >= editor.scroll,
+                ThemeEditorRow::Header(_) => false,
+            })
+            .unwrap_or(0);
+        let start = if start > 0 && matches!(rows[start - 1], ThemeEditorRow::Header(_)) {
+            start - 1
+        } else {
+            start
+        };
+        for row in rows.iter().skip(start).take(view_h.max(1)) {
+            match row {
+                ThemeEditorRow::Header(name) => lines.push(Line::from(*name)),
+                ThemeEditorRow::Color(idx) => {
+                    let field = editor.fields[*idx];
+                    let hex = editor
+                        .palette
+                        .get(field.key)
+                        .map(|c| c.to_hex())
+                        .unwrap_or_else(|| "#000000".into());
+                    let cursor = if *idx == editor.selected { ">" } else { " " };
+                    lines.push(Line::from(format!("{cursor} {:<22} {hex}", field.key)));
+                }
+            }
+        }
+        frame.render_widget(
+            Paragraph::new(lines).block(
+                Block::default()
+                    .title("F2 Theme editor")
+                    .borders(Borders::ALL)
+                    .border_style(self.theme.active_border)
+                    .style(
+                        Style::default()
+                            .bg(self.theme.modal_background)
+                            .fg(self.theme.modal_text),
+                    ),
+            ),
+            area,
+        );
     }
 
     fn render_scroll_modal(&mut self, frame: &mut ratatui::Frame, title: &str, is_help: bool) {
