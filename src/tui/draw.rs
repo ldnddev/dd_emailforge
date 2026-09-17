@@ -1,5 +1,7 @@
 //! Frame layout: header, empty body, footer, F1/F2 overlays, toasts.
+use super::details::{readable_fg, DetailHit};
 use super::help::{build_help_text, build_theme_text, count_wrapped_lines};
+use super::tree::TreeId;
 use super::*;
 
 impl App {
@@ -370,11 +372,36 @@ impl App {
     }
 }
 
+fn hit_at<'a>(hits: &'a [DetailHit], line_idx: usize, x: usize) -> Option<&'a DetailHit> {
+    hits.iter()
+        .rev()
+        .find(|h| h.line == line_idx && x >= h.x0 && x < h.x1)
+}
+
+fn blueprint_cell_style(
+    hit: Option<&DetailHit>,
+    selected: Option<&TreeId>,
+    theme: &super::theme::AppTheme,
+) -> Style {
+    let selected_here = match (selected, hit) {
+        (Some(sel), Some(h)) => sel == &h.id,
+        _ => false,
+    };
+    let bg = hit.and_then(|h| h.bg).unwrap_or(theme.body_background);
+    let content_fg = hit.and_then(|h| h.fg).unwrap_or(theme.text_primary);
+    let fg = if selected_here {
+        theme.text_active_focus
+    } else {
+        readable_fg(content_fg, bg)
+    };
+    Style::default().fg(fg).bg(bg)
+}
+
 fn style_blueprint_line<'a>(
     line: &str,
     line_idx: usize,
-    hits: &[super::details::DetailHit],
-    selected: Option<&super::tree::TreeId>,
+    hits: &[DetailHit],
+    selected: Option<&TreeId>,
     theme: &super::theme::AppTheme,
 ) -> Line<'a> {
     let chars: Vec<char> = line.chars().collect();
@@ -384,30 +411,16 @@ fn style_blueprint_line<'a>(
     let mut spans = Vec::new();
     let mut x = 0;
     while x < chars.len() {
-        let selected_here = selected.is_some()
-            && hits
-                .iter()
-                .rev()
-                .any(|h| h.line == line_idx && x >= h.x0 && x < h.x1 && selected == Some(&h.id));
+        let style = blueprint_cell_style(hit_at(hits, line_idx, x), selected, theme);
         let mut x1 = x + 1;
         while x1 < chars.len() {
-            let next_sel = selected.is_some()
-                && hits.iter().rev().any(|h| {
-                    h.line == line_idx && x1 >= h.x0 && x1 < h.x1 && selected == Some(&h.id)
-                });
-            if next_sel != selected_here {
+            let next = blueprint_cell_style(hit_at(hits, line_idx, x1), selected, theme);
+            if next != style {
                 break;
             }
             x1 += 1;
         }
         let text: String = chars[x..x1].iter().collect();
-        let style = if selected_here {
-            Style::default()
-                .fg(theme.text_active_focus)
-                .bg(theme.selected_background)
-        } else {
-            Style::default().fg(theme.text_primary)
-        };
         spans.push(Span::styled(text, style));
         x = x1;
     }

@@ -3,7 +3,9 @@ use crate::model::{
     BodyNode, ColumnChild, EmailArticle, EmailFooter, EmailHeader, EmailHero, ImagePosition,
     MjColumn, MjGroup, MjHero, MjSection, MjWrapper, SectionChild, Template,
 };
+use ratatui::style::Color;
 
+use super::theme::try_parse_hex_color;
 use super::tree::{Step, TreeId, TreeRow};
 
 pub fn details_title(label: &str) -> String {
@@ -16,6 +18,10 @@ pub struct DetailHit {
     pub x0: usize,
     pub x1: usize,
     pub id: TreeId,
+    /// Resolved email fill for this region (brand → body → ancestors → node).
+    pub bg: Option<Color>,
+    /// Resolved email text/button/divider color for this region.
+    pub fg: Option<Color>,
 }
 
 #[cfg(test)]
@@ -341,7 +347,7 @@ fn email_blueprint(t: &Template, width: usize) -> (Vec<String>, Vec<DetailHit>) 
         0,
         c.width,
         &format!("{}px canvas", t.brand.content_width),
-        None,
+        Some(&TreeId::Body),
     );
     let mut y = 1;
     let width = c.width;
@@ -356,7 +362,13 @@ fn email_blueprint(t: &Template, width: usize) -> (Vec<String>, Vec<DetailHit>) 
         }
     }
     let _ = y;
-    c.finish()
+    let (lines, mut hits) = c.finish();
+    for h in &mut hits {
+        let (bg, fg) = resolve_blueprint_colors(t, &h.id);
+        h.bg = Some(bg);
+        h.fg = Some(fg);
+    }
+    (lines, hits)
 }
 
 fn paint_body_node(
@@ -873,6 +885,8 @@ impl Canvas {
                     x0,
                     x1: x,
                     id,
+                    bg: None,
+                    fg: None,
                 });
             }
         }
@@ -918,6 +932,236 @@ fn json_ld_summary(raw: &str) -> String {
         }
     }
     "(invalid JSON)".into()
+}
+
+fn canvas_colors(t: &Template) -> (Color, Color) {
+    let brand_bg = try_parse_hex_color(&t.brand.background_color)
+        .unwrap_or(Color::Rgb(0xF4, 0xF4, 0xF4));
+    let brand_fg = try_parse_hex_color(&t.brand.text_color).unwrap_or(Color::Rgb(0x1A, 0x1A, 0x1A));
+    let bg = if t.body.background_color.trim().is_empty() {
+        brand_bg
+    } else {
+        try_parse_hex_color(&t.body.background_color).unwrap_or(brand_bg)
+    };
+    (bg, brand_fg)
+}
+
+fn apply_opt_bg(bg: &mut Color, hex: &Option<String>) {
+    if let Some(c) = hex.as_deref().and_then(try_parse_hex_color) {
+        *bg = c;
+    }
+}
+
+fn apply_opt_fg(fg: &mut Color, hex: &Option<String>) {
+    if let Some(c) = hex.as_deref().and_then(try_parse_hex_color) {
+        *fg = c;
+    }
+}
+
+fn apply_body_node_bg(bg: &mut Color, node: &BodyNode) {
+    match node {
+        BodyNode::MjSection(s) => apply_opt_bg(bg, &s.background_color),
+        BodyNode::MjWrapper(w) => apply_opt_bg(bg, &w.background_color),
+        BodyNode::MjHero(h) => apply_opt_bg(bg, &h.background_color),
+        BodyNode::EmailHeader(h) => apply_opt_bg(bg, &h.background_color),
+        BodyNode::EmailHero(h) => apply_opt_bg(bg, &h.background_color),
+        BodyNode::EmailCta(c) => apply_opt_bg(bg, &c.background_color),
+        BodyNode::EmailArticle(_) | BodyNode::EmailFooter(_) => {}
+    }
+}
+
+fn apply_column_bg(bg: &mut Color, col: &MjColumn) {
+    apply_opt_bg(bg, &col.background_color);
+    apply_opt_bg(bg, &col.inner_background_color);
+}
+
+fn apply_column_child(bg: &mut Color, fg: &mut Color, t: &Template, ch: &ColumnChild) {
+    match ch {
+        ColumnChild::MjText(n) => apply_opt_fg(fg, &n.color),
+        ColumnChild::MjButton(b) => {
+            *bg = b
+                .background_color
+                .as_deref()
+                .and_then(try_parse_hex_color)
+                .or_else(|| try_parse_hex_color(&t.brand.button_background))
+                .unwrap_or(*bg);
+            *fg = b
+                .color
+                .as_deref()
+                .and_then(try_parse_hex_color)
+                .or_else(|| try_parse_hex_color(&t.brand.button_color))
+                .unwrap_or(*fg);
+        }
+        ColumnChild::MjDivider(d) => apply_opt_fg(fg, &d.border_color),
+        ColumnChild::MjSocial(s) => apply_opt_fg(fg, &s.color),
+        ColumnChild::MjTable(tbl) => apply_opt_fg(fg, &tbl.color),
+        ColumnChild::MjImage(_)
+        | ColumnChild::MjSpacer(_)
+        | ColumnChild::MjNavbar(_)
+        | ColumnChild::MjAccordion(_)
+        | ColumnChild::MjCarousel(_) => {}
+    }
+}
+
+fn resolve_blueprint_colors(t: &Template, id: &TreeId) -> (Color, Color) {
+    let (mut bg, mut fg) = canvas_colors(t);
+    let TreeId::Path(path) = id else {
+        return (bg, fg);
+    };
+    let mut steps = path.iter();
+    let Some(Step::BodyNode(i)) = steps.next() else {
+        return (bg, fg);
+    };
+    let Some(mut node) = t.body.nodes.get(*i) else {
+        return (bg, fg);
+    };
+    apply_body_node_bg(&mut bg, node);
+    loop {
+        match steps.next() {
+            None => return (bg, fg),
+            Some(Step::WrapperChild(j)) => {
+                let BodyNode::MjWrapper(w) = node else {
+                    return (bg, fg);
+                };
+                let Some(n) = w.children.get(*j) else {
+                    return (bg, fg);
+                };
+                node = n;
+                apply_body_node_bg(&mut bg, node);
+            }
+            Some(Step::SectionChild(j)) => {
+                let BodyNode::MjSection(s) = node else {
+                    return (bg, fg);
+                };
+                match s.children.get(*j) {
+                    Some(SectionChild::MjColumn(c)) => {
+                        apply_column_bg(&mut bg, c);
+                        return resolve_column_tail(t, c, steps, bg, fg);
+                    }
+                    Some(SectionChild::MjGroup(g)) => {
+                        apply_opt_bg(&mut bg, &g.background_color);
+                        return resolve_group_tail(t, g, steps, bg, fg);
+                    }
+                    None => return (bg, fg),
+                }
+            }
+            Some(Step::HeroChild(j)) => {
+                let BodyNode::MjHero(h) = node else {
+                    return (bg, fg);
+                };
+                let Some(ch) = h.children.get(*j) else {
+                    return (bg, fg);
+                };
+                apply_column_child(&mut bg, &mut fg, t, ch);
+                return resolve_nested_tail(t, ch, steps, bg, fg);
+            }
+            _ => return (bg, fg),
+        }
+    }
+}
+
+fn resolve_group_tail(
+    t: &Template,
+    g: &MjGroup,
+    mut steps: std::slice::Iter<'_, Step>,
+    mut bg: Color,
+    fg: Color,
+) -> (Color, Color) {
+    match steps.next() {
+        None => (bg, fg),
+        Some(Step::GroupCol(i)) => match g.children.get(*i) {
+            Some(c) => {
+                apply_column_bg(&mut bg, c);
+                resolve_column_tail(t, c, steps, bg, fg)
+            }
+            None => (bg, fg),
+        },
+        _ => (bg, fg),
+    }
+}
+
+fn resolve_column_tail(
+    t: &Template,
+    c: &MjColumn,
+    mut steps: std::slice::Iter<'_, Step>,
+    mut bg: Color,
+    mut fg: Color,
+) -> (Color, Color) {
+    match steps.next() {
+        None => (bg, fg),
+        Some(Step::ColComp(i)) => match c.components.get(*i) {
+            Some(ch) => {
+                apply_column_child(&mut bg, &mut fg, t, ch);
+                resolve_nested_tail(t, ch, steps, bg, fg)
+            }
+            None => (bg, fg),
+        },
+        _ => (bg, fg),
+    }
+}
+
+fn resolve_nested_tail(
+    _t: &Template,
+    ch: &ColumnChild,
+    mut steps: std::slice::Iter<'_, Step>,
+    mut bg: Color,
+    mut fg: Color,
+) -> (Color, Color) {
+    match steps.next() {
+        None => (bg, fg),
+        Some(Step::NavbarLink(i)) => {
+            if let ColumnChild::MjNavbar(n) = ch {
+                if let Some(link) = n.links.get(*i) {
+                    apply_opt_fg(&mut fg, &link.color);
+                }
+            }
+            (bg, fg)
+        }
+        Some(Step::AccordionEl(i)) => {
+            if let ColumnChild::MjAccordion(a) = ch {
+                if let Some(el) = a.elements.get(*i) {
+                    apply_opt_bg(&mut bg, &el.background_color);
+                }
+            }
+            (bg, fg)
+        }
+        Some(Step::CarouselImg(_)) => (bg, fg),
+        _ => (bg, fg),
+    }
+}
+
+/// Relative sRGB luminance 0..=1.
+fn relative_luminance(c: Color) -> f32 {
+    let Color::Rgb(r, g, b) = c else {
+        return 0.5;
+    };
+    let lin = |v: u8| {
+        let s = v as f32 / 255.0;
+        if s <= 0.04045 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
+fn contrast_ratio(a: Color, b: Color) -> f32 {
+    let (l1, l2) = (relative_luminance(a), relative_luminance(b));
+    let (hi, lo) = if l1 >= l2 { (l1, l2) } else { (l2, l1) };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+/// Keep labels readable on the email fill. Below 3:1, snap to black or white.
+pub(crate) fn readable_fg(fg: Color, bg: Color) -> Color {
+    if contrast_ratio(fg, bg) >= 3.0 {
+        return fg;
+    }
+    if relative_luminance(bg) > 0.5 {
+        Color::Rgb(15, 17, 20)
+    } else {
+        Color::Rgb(245, 246, 247)
+    }
 }
 
 #[cfg(test)]
@@ -1049,5 +1293,102 @@ mod tests {
             &h.id,
             TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(0)))
         )));
+    }
+
+    fn hit<'a>(hits: &'a [DetailHit], pred: impl Fn(&TreeId) -> bool) -> &'a DetailHit {
+        hits.iter().find(|h| pred(&h.id)).expect("hit")
+    }
+
+    #[test]
+    fn blueprint_section_fill_uses_background_color() {
+        let mut t = sample();
+        if let BodyNode::MjSection(s) = &mut t.body.nodes[0] {
+            s.background_color = Some("#CC0000".into());
+        }
+        let (_, hits) = details_view(Some(&t), Some(&body_row()), 48);
+        let section = hit(&hits, |id| {
+            matches!(id, TreeId::Path(p) if p.as_slice() == [Step::BodyNode(0)])
+        });
+        assert_eq!(section.bg, Some(Color::Rgb(0xCC, 0, 0)));
+        let text = hit(&hits, |id| {
+            matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(0))))
+        });
+        assert_eq!(text.bg, Some(Color::Rgb(0xCC, 0, 0)));
+        assert_eq!(text.fg, Some(Color::Rgb(0x1A, 0x1A, 0x1A)));
+    }
+
+    #[test]
+    fn blueprint_button_uses_brand_then_own_colors() {
+        let t = sample();
+        let (_, hits) = details_view(Some(&t), Some(&body_row()), 48);
+        let btn = hit(&hits, |id| {
+            matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(1))))
+        });
+        assert_eq!(btn.bg, Some(Color::Rgb(0xFF, 0xAF, 0x46)));
+        assert_eq!(btn.fg, Some(Color::Rgb(0x0F, 0x11, 0x14)));
+
+        let mut t = sample();
+        if let BodyNode::MjSection(s) = &mut t.body.nodes[0] {
+            if let SectionChild::MjColumn(c) = &mut s.children[0] {
+                if let ColumnChild::MjButton(b) = &mut c.components[1] {
+                    b.background_color = Some("#00AA00".into());
+                    b.color = Some("#FFFFFF".into());
+                }
+            }
+        }
+        let (_, hits) = details_view(Some(&t), Some(&body_row()), 48);
+        let btn = hit(&hits, |id| {
+            matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(1))))
+        });
+        assert_eq!(btn.bg, Some(Color::Rgb(0x00, 0xAA, 0x00)));
+        assert_eq!(btn.fg, Some(Color::Rgb(0xFF, 0xFF, 0xFF)));
+    }
+
+    #[test]
+    fn blueprint_column_inner_background_wins() {
+        let mut t = sample();
+        if let BodyNode::MjSection(s) = &mut t.body.nodes[0] {
+            s.background_color = Some("#111111".into());
+            if let SectionChild::MjColumn(c) = &mut s.children[0] {
+                c.background_color = Some("#222222".into());
+                c.inner_background_color = Some("#00AA00".into());
+            }
+        }
+        let (_, hits) = details_view(Some(&t), Some(&body_row()), 48);
+        let col = hit(&hits, |id| {
+            matches!(
+                id,
+                TreeId::Path(p) if p.as_slice() == [Step::BodyNode(0), Step::SectionChild(0)]
+            )
+        });
+        assert_eq!(col.bg, Some(Color::Rgb(0x00, 0xAA, 0x00)));
+        let text = hit(&hits, |id| {
+            matches!(id, TreeId::Path(p) if matches!(p.last(), Some(Step::ColComp(0))))
+        });
+        assert_eq!(text.bg, Some(Color::Rgb(0x00, 0xAA, 0x00)));
+    }
+
+    #[test]
+    fn blueprint_invalid_hex_falls_back_to_brand() {
+        let mut t = sample();
+        if let BodyNode::MjSection(s) = &mut t.body.nodes[0] {
+            s.background_color = Some("not-a-color".into());
+        }
+        let (_, hits) = details_view(Some(&t), Some(&body_row()), 48);
+        let section = hit(&hits, |id| {
+            matches!(id, TreeId::Path(p) if p.as_slice() == [Step::BodyNode(0)])
+        });
+        assert_eq!(section.bg, Some(Color::Rgb(0xF4, 0xF4, 0xF4)));
+    }
+
+    #[test]
+    fn readable_fg_snaps_when_contrast_is_low() {
+        let yellow = Color::Rgb(255, 255, 0);
+        assert_eq!(readable_fg(yellow, yellow), Color::Rgb(15, 17, 20));
+        let navy = Color::Rgb(0, 0, 40);
+        assert_eq!(readable_fg(navy, navy), Color::Rgb(245, 246, 247));
+        let black = Color::Rgb(0, 0, 0);
+        let white = Color::Rgb(255, 255, 255);
+        assert_eq!(readable_fg(black, white), black);
     }
 }

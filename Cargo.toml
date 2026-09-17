@@ -1,6 +1,6 @@
 [package]
 name = "dd_emailforge"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "MIT"
 description = "Terminal-UI email template builder (MJML 5)"

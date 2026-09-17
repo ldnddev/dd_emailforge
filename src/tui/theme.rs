@@ -288,17 +288,31 @@ pub(crate) fn choose_header_copy(quotes: &[String]) -> String {
     quotes[(seed as usize) % quotes.len()].clone()
 }
 
+pub(crate) fn try_parse_hex_color(raw: &str) -> Option<Color> {
+    parse_hex_color(raw).ok()
+}
+
 fn parse_hex_color(raw: &str) -> anyhow::Result<Color> {
     let hex = raw.trim().trim_start_matches('#');
-    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(anyhow::anyhow!(
-            "expected hex color like '#RRGGBB', got '{}'",
-            raw
-        ));
-    }
-    let r = u8::from_str_radix(&hex[0..2], 16)?;
-    let g = u8::from_str_radix(&hex[2..4], 16)?;
-    let b = u8::from_str_radix(&hex[4..6], 16)?;
+    let expanded = match hex.len() {
+        3 if hex.chars().all(|c| c.is_ascii_hexdigit()) => {
+            let b = hex.as_bytes();
+            format!(
+                "{0}{0}{1}{1}{2}{2}",
+                b[0] as char, b[1] as char, b[2] as char
+            )
+        }
+        6 if hex.chars().all(|c| c.is_ascii_hexdigit()) => hex.to_string(),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "expected hex color like '#RRGGBB', got '{}'",
+                raw
+            ));
+        }
+    };
+    let r = u8::from_str_radix(&expanded[0..2], 16)?;
+    let g = u8::from_str_radix(&expanded[2..4], 16)?;
+    let b = u8::from_str_radix(&expanded[4..6], 16)?;
     Ok(Color::Rgb(r, g, b))
 }
 

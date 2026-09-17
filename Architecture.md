@@ -25,7 +25,7 @@ src/
   tui/help.rs             F1 / F2 text
   tui/toasts.rs           four-level ToastLevel
   tui/tree.rs             Structure tree build / nav / expand
-  tui/details.rs          inspector + 600px ascii map + click-to-select
+  tui/details.rs          inspector + 600px ascii map (email fills) + click-to-select
   tui/editform/           FormEdit types + field maps
   tui/modals/             Modal enum, paint, events, FormEdit, pickers
   tui/cursor.rs           tree id → form-state mapping

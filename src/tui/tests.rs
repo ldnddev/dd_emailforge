@@ -1085,6 +1085,63 @@ fn click_blueprint_selects_nested_component() {
 }
 
 #[test]
+fn blueprint_paints_section_background_and_keeps_selection_chrome() {
+    use crate::model::{BodyNode, ColumnChild, MjColumn, MjSection, MjText, SectionChild};
+    use ratatui::style::Color;
+    let mut t = crate::model::Template::minimal();
+    t.body.nodes.push(BodyNode::MjSection(MjSection {
+        background_color: Some("#CC0000".into()),
+        children: vec![SectionChild::MjColumn(MjColumn {
+            width: Some("100%".into()),
+            components: vec![ColumnChild::MjText(MjText {
+                content: "Hello".into(),
+                ..Default::default()
+            })],
+            ..Default::default()
+        })],
+        ..Default::default()
+    }));
+    let mut app = App::new(
+        AppTheme::default(),
+        "default".to_string(),
+        None,
+        Some(t),
+        None,
+    );
+    let section_row = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-section"))
+        .expect("section row");
+    app.selected_row = section_row;
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw");
+    let (rect, _) = app
+        .details_hit_areas
+        .iter()
+        .rev()
+        .find(|(r, id)| {
+            r.width > 2
+                && matches!(
+                    id,
+                    super::tree::TreeId::Path(p) if p.as_slice() == [super::tree::Step::BodyNode(0)]
+                )
+        })
+        .cloned()
+        .expect("section hit");
+    let buf = terminal.backend().buffer();
+    let cell = &buf[(rect.x + 1, rect.y)];
+    assert_eq!(cell.bg, Color::Rgb(0xCC, 0, 0), "email fill should show");
+    assert_eq!(
+        cell.fg,
+        app.theme.text_active_focus,
+        "selection is chrome fg, not a fill"
+    );
+    assert_ne!(cell.bg, app.theme.selected_background);
+}
+
+#[test]
 fn footer_medium_mentions_insert() {
     let app = app_with_template();
     let hint = app.footer_hint(80);

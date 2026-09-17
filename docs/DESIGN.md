@@ -493,7 +493,7 @@ There is **no template list** in chrome. One template is open.
 **Details inspector:**
 
 - Title `Details — {selected label}` (e.g. `Details — mj-button`, `Details — brand`).
-- Full-email ascii blueprint of every layout node (stacked sections, column boxes, nested components), scaled to pane width. The selected tree node is highlighted with `selected_background` + `text_active_focus`.
+- Full-email ascii blueprint of every layout node (stacked sections, column boxes, nested components), scaled to pane width. Each region is filled with that node's resolved email colors (`background_color` / column `inner_background_color` / button `background_color`, inheriting brand → body → ancestors). Glyphs use the node's `color` or `brand.text_color`, contrast-boosted if the pair is under 3:1. Selection uses `text_active_focus` on those glyphs so the fill stays visible — do **not** paint `selected_background` over the map. `[BRAND]` inspector still prints hex as `text_primary` (no invented swatch tokens).
 - Click a blueprint region to select that element in the Structure tree (innermost hit wins). Store rects like siteforge `page_details_text`.
 - For `[HEAD]`: subject, preheader, lang, title, breakpoint, base_url, fonts (`name` + href host), `json_ld` (first `@type` or `(empty)`), `css` (`N lines` or `(empty)`), `css_inline` as labeled values (Enter still opens the form).
 - For `[BRAND]`: swatches are **not** drawn with invented tokens — print hex as `text_primary` text, e.g. `button_background  #FFAF46`.
