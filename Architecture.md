@@ -7,6 +7,7 @@ Living product spec: `docs/SPEC.md`. Visual contract: `LDNDDEV_TUI_VISUAL_STANDA
 ## Crate layout
 
 ```
+crates/ldnddev_theme/     in-tree YAML theme load/save + F2 color editor
 src/
   main.rs                 clap CLI: init / tui / validate / export / preview / show
   model.rs                Template → brand / head / body.nodes (serde, kebab-case tags)
