@@ -2,15 +2,15 @@
 # Recapture tutorial screenshots from the live TUI renderer.
 #
 # Usage (from repo root or anywhere):
-#   ./docs/tutorial/capture.sh
+#   ./docs/capture.sh
 #
 # Requires: cargo, and a Chromium/Chrome binary for PNG output.
 # Optional: EMAILFORGE_TUTORIAL_SHOTS, CHROME
 
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-shot_dir="${EMAILFORGE_TUTORIAL_SHOTS:-$root/docs/tutorial/images}"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+shot_dir="${EMAILFORGE_TUTORIAL_SHOTS:-$root/docs/images}"
 mkdir -p "$shot_dir"
 
 chrome="${CHROME:-}"

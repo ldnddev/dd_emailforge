@@ -1,19 +1,21 @@
-# Tutorial screenshots
+# Tutorial
 
-User-facing walkthrough: [`index.html`](index.html).
+Live site (GitHub Pages): https://ldnddev.github.io/dd_emailforge/
+
+Source: [`index.html`](index.html). GitHub Pages publishes that page and `images/` from this folder; it does not run Jekyll (see `.nojekyll`).
 
 ## Recapture
 
 From the **repo root**:
 
 ```bash
-./docs/tutorial/capture.sh
+./docs/capture.sh
 ```
 
 Needs `cargo` and Chromium/Chrome (`chromium`, `google-chrome`, … or `CHROME=/path/to/chrome`).
 
 ```bash
-EMAILFORGE_TUTORIAL_SHOTS=/tmp/shots CHROME=/usr/bin/chromium ./docs/tutorial/capture.sh
+EMAILFORGE_TUTORIAL_SHOTS=/tmp/shots CHROME=/usr/bin/chromium ./docs/capture.sh
 ```
 
 Pipeline:
@@ -41,5 +43,5 @@ Header tagline is pinned to `600 pixels wide. Infinite opinions.` so captures ar
 
 1. Add a helper + `write_frame(dir, "tui-foo", &mut …)` in `capture_tutorial_frames`.
 2. Mention the file in `index.html` and the table above.
-3. Run `./docs/tutorial/capture.sh`.
+3. Run `./docs/capture.sh`.
 4. Commit the new PNG.

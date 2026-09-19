@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>dd_emailforge tutorial — setup, install, and the TUI</title>
+  <meta name="description" content="Setup, install, and TUI walkthrough for dd_emailforge — a terminal-UI email template builder.">
+  <link rel="canonical" href="https://ldnddev.github.io/dd_emailforge/">
+  <meta property="og:title" content="dd_emailforge tutorial">
+  <meta property="og:description" content="Setup, install, and the TUI: structure tree, FormEdit, preview, and export.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://ldnddev.github.io/dd_emailforge/">
+  <meta property="og:image" content="https://ldnddev.github.io/dd_emailforge/images/tui-welcome.png">
   <style>
     :root {
       --bg: #0F1114;
@@ -137,7 +144,7 @@
 <body>
   <header class="hero">
     <div class="wrap">
-      <p class="muted" style="margin:0 0 8px">ldnddev · dd_emailforge</p>
+      <p class="muted" style="margin:0 0 8px"><a href="https://github.com/ldnddev/dd_emailforge">ldnddev / dd_emailforge</a></p>
       <h1>Build an email in the terminal.</h1>
       <p class="lede">This tutorial walks through setup, install, and the TUI: structure tree, details blueprint, insert, FormEdit, preview, and export. Screenshots are captured from the live renderer — see <a href="#screenshots">Updating screenshots</a> if the UI changes.</p>
     </div>
@@ -319,12 +326,12 @@ dd_emailforge preview ./my-email --port 8766</pre>
         <li><code>~/.config/ldnddev/dd_emailforge_theme.yml</code></li>
         <li>Built-in defaults</li>
       </ol>
-      <p>Schema: <a href="../../LDNDDEV_TUI_VISUAL_STANDARD.md">LDNDDEV_TUI_VISUAL_STANDARD.md</a>. Do not invent tokens.</p>
+      <p>Schema: <a href="https://github.com/ldnddev/dd_emailforge/blob/main/LDNDDEV_TUI_VISUAL_STANDARD.md">LDNDDEV_TUI_VISUAL_STANDARD.md</a>. Do not invent tokens.</p>
 
       <h2 id="screenshots">Updating screenshots</h2>
-      <p>The PNGs under <code>docs/tutorial/images/</code> are not hand-drawn. They are screenshots of HTML frames dumped from the live Ratatui renderer (same <code>App::draw</code> path as the TUI).</p>
+      <p>The PNGs under <code>docs/images/</code> are not hand-drawn. They are screenshots of HTML frames dumped from the live Ratatui renderer (same <code>App::draw</code> path as the TUI).</p>
       <p><strong>From the repo root:</strong></p>
-      <pre>./docs/tutorial/capture.sh</pre>
+      <pre>./docs/capture.sh</pre>
       <p>That will:</p>
       <ol>
         <li>Run the ignored test <code>tui::tutorial_shots::capture_tutorial_frames</code>, which writes one HTML frame per shot using a pinned header quote and the welcome starter (or empty chrome).</li>
@@ -346,21 +353,21 @@ dd_emailforge preview ./my-email --port 8766</pre>
         </tbody>
       </table>
       <div class="callout">
-        After a TUI visual change (chrome, blueprint, picker, forms), re-run <code>./docs/tutorial/capture.sh</code> and commit the PNGs with the code. Do not redraw these in an image editor — the capture path is the source of truth so labels stay honest. To add a shot: append a writer in <code>capture_tutorial_frames</code>, add the filename here and in this page’s <code>&lt;figure&gt;</code>, then recapture.
+        After a TUI visual change (chrome, blueprint, picker, forms), re-run <code>./docs/capture.sh</code> and commit the PNGs with the code. Do not redraw these in an image editor — the capture path is the source of truth so labels stay honest. To add a shot: append a writer in <code>capture_tutorial_frames</code>, add the filename here and in this page’s <code>&lt;figure&gt;</code>, then recapture.
       </div>
-      <p>More capture notes: <a href="README.md">docs/tutorial/README.md</a>.</p>
+      <p>More capture notes: <a href="https://github.com/ldnddev/dd_emailforge/blob/main/docs/README.md">docs/README.md</a>.</p>
 
       <h2 id="more">More docs</h2>
       <ul>
-        <li><a href="../../Architecture.md">Architecture.md</a> — crate map, pipeline, keys</li>
-        <li><a href="../SPEC.md">docs/SPEC.md</a> — living conventions</li>
-        <li><a href="../DESIGN.md">docs/DESIGN.md</a> — locked design</li>
-        <li><a href="../../components/">components/*.md</a> — per-node field contracts</li>
+        <li><a href="https://github.com/ldnddev/dd_emailforge/blob/main/Architecture.md">Architecture.md</a> — crate map, pipeline, keys</li>
+        <li><a href="https://github.com/ldnddev/dd_emailforge/blob/main/docs/SPEC.md">docs/SPEC.md</a> — living conventions</li>
+        <li><a href="https://github.com/ldnddev/dd_emailforge/blob/main/docs/DESIGN.md">docs/DESIGN.md</a> — locked design</li>
+        <li><a href="https://github.com/ldnddev/dd_emailforge/tree/main/components">components/*.md</a> — per-node field contracts</li>
       </ul>
     </div>
   </main>
   <footer class="site">
-    <div class="wrap">dd_emailforge · MIT License · screenshots from <code>docs/tutorial/capture.sh</code></div>
+    <div class="wrap">dd_emailforge · MIT License · screenshots from <code>docs/capture.sh</code></div>
   </footer>
 </body>
 </html>

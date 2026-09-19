@@ -1,4 +1,4 @@
-//! Capture live TUI frames as HTML for `docs/tutorial/capture.sh`.
+//! Capture live TUI frames as HTML for `docs/capture.sh`.
 //!
 //! Run via that script (or `EMAILFORGE_TUTORIAL_SHOTS=… cargo test --offline
 //! capture_tutorial_frames -- --ignored --nocapture`).
@@ -17,10 +17,10 @@ const ROWS: u16 = 30;
 const HEADER_COPY: &str = "600 pixels wide. Infinite opinions.";
 
 #[test]
-#[ignore = "writes tutorial HTML frames; run docs/tutorial/capture.sh"]
+#[ignore = "writes tutorial HTML frames; run docs/capture.sh"]
 fn capture_tutorial_frames() {
     let dir = std::env::var("EMAILFORGE_TUTORIAL_SHOTS")
-        .unwrap_or_else(|_| format!("{}/docs/tutorial/images", env!("CARGO_MANIFEST_DIR")));
+        .unwrap_or_else(|_| format!("{}/docs/images", env!("CARGO_MANIFEST_DIR")));
     let dir = Path::new(&dir);
     fs::create_dir_all(dir).expect("mkdir shot dir");
 

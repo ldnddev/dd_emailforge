@@ -8,7 +8,7 @@ Companion docs:
 - `LDNDDEV_TUI_VISUAL_STANDARD.md` — portable TUI theme + shell contract
 - `components/*.md` — per-component fields, emit rules, validation
 - `docs/DESIGN.md` — locked design (do not silently fork)
-- `docs/tutorial/index.html` — setup / install / TUI walkthrough with screenshots
+- `docs/index.html` — setup / install / TUI walkthrough with screenshots (GitHub Pages: https://ldnddev.github.io/dd_emailforge/)
 - `README.md` — short install + link to the tutorial
 
 ---

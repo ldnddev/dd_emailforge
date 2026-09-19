@@ -2,7 +2,7 @@
 
 Terminal-UI email template builder. Edit a typed `template.json`, export strict MJML, compile HTML with official **MJML 5**.
 
-**Tutorial (setup, install, TUI, screenshots):** [docs/tutorial/index.html](docs/tutorial/index.html)
+**Tutorial (setup, install, TUI, screenshots):** [ldnddev.github.io/dd_emailforge](https://ldnddev.github.io/dd_emailforge/)
 
 ## Install
 
@@ -33,11 +33,11 @@ dd_emailforge tui ./my-email
 
 `tui` with no path still launches chrome. A directory argument means `dir/template.json`. Starters: `welcome` (default) · `newsletter` · `promo` · `transactional`.
 
-Quit is **Ctrl+Q** only. Full keys, preview, and export: the [tutorial](docs/tutorial/index.html) and `F1` in the TUI.
+Quit is **Ctrl+Q** only. Full keys, preview, and export: the [tutorial](https://ldnddev.github.io/dd_emailforge/) and `F1` in the TUI.
 
 ## Docs
 
-- [Tutorial](docs/tutorial/index.html) — setup, screenshots, how to recapture them
+- [Tutorial](https://ldnddev.github.io/dd_emailforge/) — setup, screenshots, how to recapture them (`docs/index.html`)
 - `Architecture.md` — crate map and pipeline
 - `docs/SPEC.md` — living conventions
 - `docs/DESIGN.md` — locked design
