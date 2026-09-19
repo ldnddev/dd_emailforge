@@ -22,7 +22,7 @@ use validate::validate_template_with_root;
 #[derive(Debug, Parser)]
 #[command(
     name = "dd_emailforge",
-    version,
+    version = env!("CARGO_PKG_VERSION"),
     about = "Terminal-UI email template builder"
 )]
 struct Cli {

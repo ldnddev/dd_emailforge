@@ -8,6 +8,7 @@ use crate::starters::StarterKind;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
+use ratatui::buffer::CellDiffOption;
 use ratatui::style::Color;
 use std::fs;
 use std::path::Path;
@@ -118,7 +119,7 @@ fn frame_html(title: &str, buffer: &ratatui::buffer::Buffer) -> String {
         let mut x = 0u16;
         while x < area.width {
             let cell = &buffer[(x, y)];
-            if cell.skip {
+            if cell.diff_option == CellDiffOption::Skip {
                 x += 1;
                 continue;
             }
@@ -127,7 +128,7 @@ fn frame_html(title: &str, buffer: &ratatui::buffer::Buffer) -> String {
             let mut x1 = x + 1;
             while x1 < area.width {
                 let next = &buffer[(x1, y)];
-                if next.skip {
+                if next.diff_option == CellDiffOption::Skip {
                     break;
                 }
                 if css_color(next.fg, "#F5F6F7") != fg || css_color(next.bg, "#0F1114") != bg {

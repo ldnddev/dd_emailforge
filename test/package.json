@@ -1,8 +1,0 @@
-{
-  "name": "test",
-  "private": true,
-  "description": "dd_emailforge template — official MJML 5 compiler pin",
-  "devDependencies": {
-    "mjml": "^5.4.0"
-  }
-}
