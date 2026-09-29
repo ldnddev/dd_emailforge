@@ -34,6 +34,7 @@ pub struct ValidateIssue {
 }
 
 impl ValidateIssue {
+    #[cfg(test)]
     pub fn contains(&self, needle: &str) -> bool {
         self.message.contains(needle)
     }
