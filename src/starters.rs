@@ -26,13 +26,30 @@ pub enum StarterKind {
 }
 
 impl StarterKind {
-    #[cfg(test)]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Welcome => "welcome",
             Self::Newsletter => "newsletter",
             Self::Promo => "promo",
             Self::Transactional => "transactional",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Welcome => Self::Newsletter,
+            Self::Newsletter => Self::Promo,
+            Self::Promo => Self::Transactional,
+            Self::Transactional => Self::Welcome,
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        match self {
+            Self::Welcome => Self::Transactional,
+            Self::Newsletter => Self::Welcome,
+            Self::Promo => Self::Newsletter,
+            Self::Transactional => Self::Promo,
         }
     }
 }
@@ -75,7 +92,7 @@ pub fn init_next_steps(dir: &Path) -> String {
     format!(
         "If mjml is already installed globally (on your PATH), you can skip npm install.\n\
          Otherwise: cd {} && npm install\n\
-         Then: dd_emailforge tui {}",
+         Then: dd_emailforge {}",
         dir.display(),
         dir.display()
     )
@@ -374,7 +391,7 @@ mod tests {
         assert!(msg.contains("already installed globally"));
         assert!(msg.contains("skip npm install"));
         assert!(msg.contains("cd welcome-email && npm install"));
-        assert!(msg.contains("dd_emailforge tui welcome-email"));
+        assert!(msg.contains("dd_emailforge welcome-email"));
     }
 
     #[test]

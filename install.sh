@@ -15,7 +15,7 @@
 # Override defaults via env vars:
 #   PREFIX=$HOME/.local                       # binary lives at $PREFIX/bin/dd_emailforge
 #   CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/ldnddev
-#   VERSION=latest                            # or v0.8.0 / 0.8.0
+#   VERSION=latest                            # or v0.9.0 / 0.9.0
 #   REPO=ldnddev/dd_emailforge
 #   DOWNLOAD_BASE=https://…/download          # optional mirror (also accepts file://)
 #   GITHUB_TOKEN=…                            # optional; private repos / higher rate limits
@@ -70,7 +70,7 @@ Usage:
 Override defaults via env vars:
   PREFIX=$HOME/.local                       # binary lives at $PREFIX/bin/dd_emailforge
   CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/ldnddev
-  VERSION=latest                            # or v0.8.0 / 0.8.0
+  VERSION=latest                            # or v0.9.0 / 0.9.0
   REPO=ldnddev/dd_emailforge
   DOWNLOAD_BASE=https://…/download          # optional mirror (also accepts file://)
   GITHUB_TOKEN=…                            # optional; private repos / higher rate limits
@@ -210,7 +210,7 @@ path_note() {
             ;;
     esac
     green ""
-    green "Done. Try:  $BIN_NAME tui"
+    green "Done. Try:  $BIN_NAME"
 }
 
 # Download, verify, and install a matching GitHub Release archive into $1.

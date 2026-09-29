@@ -1,5 +1,6 @@
 //! TUI export (Shift+E) and preview (`p`).
-use std::time::{Duration, Instant};
+use std::path::PathBuf;
+use std::sync::mpsc;
 
 use super::*;
 use crate::emit::{EmitMode, write_mjml};
@@ -8,19 +9,25 @@ use crate::preview::{PreviewMeta, PreviewSession};
 use crate::storage;
 use crate::validate::validate_template_for_export;
 
+pub(in crate::tui) enum ExportJobResult {
+    Ok { html_path: PathBuf, html_bytes: u64 },
+    Err(MjmlError),
+}
+
 impl App {
     pub(in crate::tui) fn begin_export(&mut self) {
         let Some(template) = self.template.clone() else {
-            self.push_toast(
-                ToastLevel::Warning,
-                "No template open. Run: dd_emailforge init <dir>",
-            );
+            self.push_toast(ToastLevel::Warning, super::EMPTY_TEMPLATE_HINT);
             return;
         };
         let Some(path) = self.path.clone() else {
             self.push_toast(ToastLevel::Warning, "Save the template before exporting.");
             return;
         };
+        if self.export_rx.is_some() {
+            self.push_toast(ToastLevel::Info, "Export already running.");
+            return;
+        }
         let root = storage::template_root(&path);
         let report = validate_template_for_export(&template, Some(&root));
         if !report.errors.is_empty() {
@@ -31,7 +38,7 @@ impl App {
             return;
         }
         for w in report.warnings {
-            self.push_toast(ToastLevel::Warning, w);
+            self.push_toast(ToastLevel::Warning, w.to_string());
         }
         let bin = match mjml::discover_mjml(&root) {
             Ok(p) => p,
@@ -53,23 +60,62 @@ impl App {
             self.push_toast(ToastLevel::Error, format!("Failed to write MJML: {e}"));
             return;
         }
-        match mjml::compile_one_shot_captured(&bin, &root, &mjml_path, &html_path) {
+        let (tx, rx) = mpsc::channel();
+        self.export_rx = Some(rx);
+        self.push_toast(ToastLevel::Info, "Exporting...");
+        std::thread::spawn(move || {
+            let result = match mjml::compile_one_shot_captured(&bin, &root, &mjml_path, &html_path)
+            {
+                Ok(result) => ExportJobResult::Ok {
+                    html_path,
+                    html_bytes: result.html_bytes,
+                },
+                Err(e) => ExportJobResult::Err(e),
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    pub(in crate::tui) fn drain_export(&mut self) -> bool {
+        let Some(rx) = self.export_rx.as_ref() else {
+            return false;
+        };
+        match rx.try_recv() {
             Ok(result) => {
+                self.export_rx = None;
+                self.apply_export_result(result);
+                true
+            }
+            Err(mpsc::TryRecvError::Empty) => false,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.export_rx = None;
+                self.push_toast(ToastLevel::Error, "Export failed: compiler thread exited.");
+                true
+            }
+        }
+    }
+
+    fn apply_export_result(&mut self, result: ExportJobResult) {
+        match result {
+            ExportJobResult::Ok {
+                html_path,
+                html_bytes,
+            } => {
                 self.push_toast(
                     ToastLevel::Success,
                     format!("Exported {}", html_path.display()),
                 );
-                if let Some(w) = gmail_clip_warning(result.html_bytes) {
+                if let Some(w) = gmail_clip_warning(html_bytes) {
                     self.push_toast(ToastLevel::Warning, w);
                 }
             }
-            Err(MjmlError::NotFound { searched }) => {
+            ExportJobResult::Err(MjmlError::NotFound { searched }) => {
                 self.modal = Some(Modal::MjmlMissing { searched });
             }
-            Err(MjmlError::Compile { stderr }) => {
+            ExportJobResult::Err(MjmlError::Compile { stderr }) => {
                 self.modal = Some(Modal::MjmlCompileError { stderr, scroll: 0 });
             }
-            Err(e) => {
+            ExportJobResult::Err(e) => {
                 self.modal = Some(Modal::MjmlCompileError {
                     stderr: e.to_string(),
                     scroll: 0,
@@ -80,10 +126,7 @@ impl App {
 
     pub(in crate::tui) fn begin_preview(&mut self) {
         let Some(template) = self.template.clone() else {
-            self.push_toast(
-                ToastLevel::Warning,
-                "No template open. Run: dd_emailforge init <dir>",
-            );
+            self.push_toast(ToastLevel::Warning, super::EMPTY_TEMPLATE_HINT);
             return;
         };
         let Some(path) = self.path.clone() else {
@@ -100,7 +143,7 @@ impl App {
             return;
         }
         for w in report.warnings {
-            self.push_toast(ToastLevel::Warning, w);
+            self.push_toast(ToastLevel::Warning, w.to_string());
         }
 
         if let Some(session) = self.preview.as_ref() {
@@ -173,7 +216,7 @@ impl App {
         let mut session = session;
         session.watch = Some(watch);
 
-        let ready = wait_for_file(&compiled, Duration::from_secs(2));
+        let ready = compiled.is_file();
         let url = session.url();
         self.preview = Some(session);
         if !ready {
@@ -185,7 +228,7 @@ impl App {
         }
     }
 
-    pub(in crate::tui) fn drain_watch_errors(&mut self) {
+    pub(in crate::tui) fn drain_watch_errors(&mut self) -> bool {
         let mut lines = Vec::new();
         if let Some(session) = self.preview.as_ref() {
             if let Some(watch) = session.watch.as_ref() {
@@ -196,6 +239,9 @@ impl App {
         }
         if let Some(line) = lines.pop() {
             self.push_toast(ToastLevel::Warning, line);
+            true
+        } else {
+            false
         }
     }
 
@@ -223,15 +269,4 @@ impl App {
             }
         }
     }
-}
-
-fn wait_for_file(path: &std::path::Path, timeout: Duration) -> bool {
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        if path.is_file() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    false
 }

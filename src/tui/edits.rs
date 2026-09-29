@@ -16,16 +16,39 @@ impl App {
         if self.undo_stack.len() > UNDO_CAP {
             self.undo_stack.remove(0);
         }
+        self.redo_stack.clear();
     }
 
     pub(in crate::tui) fn undo_last(&mut self) {
-        let Some(template) = self.undo_stack.pop() else {
+        let Some(prev) = self.undo_stack.pop() else {
             self.push_toast(ToastLevel::Warning, "Nothing to undo.");
             return;
         };
-        self.template = Some(template);
+        if let Some(current) = self.template.take() {
+            self.redo_stack.push(current);
+            if self.redo_stack.len() > UNDO_CAP {
+                self.redo_stack.remove(0);
+            }
+        }
+        self.template = Some(prev);
         self.clamp_tree_selection();
         self.push_toast(ToastLevel::Success, "Undid last change.");
+    }
+
+    pub(in crate::tui) fn redo_last(&mut self) {
+        let Some(next) = self.redo_stack.pop() else {
+            self.push_toast(ToastLevel::Warning, "Nothing to redo.");
+            return;
+        };
+        if let Some(current) = self.template.take() {
+            self.undo_stack.push(current);
+            if self.undo_stack.len() > UNDO_CAP {
+                self.undo_stack.remove(0);
+            }
+        }
+        self.template = Some(next);
+        self.clamp_tree_selection();
+        self.push_toast(ToastLevel::Success, "Redid last change.");
     }
 
     pub(in crate::tui) fn select_tree_id(&mut self, id: &TreeId) {

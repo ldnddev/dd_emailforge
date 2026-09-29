@@ -9,7 +9,7 @@ Living product spec: `docs/SPEC.md`. Visual contract: `LDNDDEV_TUI_VISUAL_STANDA
 ```
 crates/ldnddev_theme/     in-tree YAML theme load/save + F2 color editor
 src/
-  main.rs                 clap CLI: init / tui / validate / export / preview / show
+  main.rs                 clap: dd_emailforge [PATH] is the app; init / validate / export / preview / show
   model.rs                Template → brand / head / body.nodes (serde, kebab-case tags)
   padding.rs              MJML padding shorthand (1-4 px/% values; bare numbers → px)
   storage.rs              JSON load/save, path resolve, atomic write, .backup
@@ -32,7 +32,8 @@ src/
   tui/cursor.rs           tree id → form-state mapping
   tui/component_kind.rs   insert-picker kinds + legal-target table
   tui/insert.rs           splice a kind at the current selection
-  tui/edits.rs            undo / delete / duplicate / reorder / columns
+  tui/edits.rs            undo / redo / delete / duplicate / reorder / columns
+  tui/session.rs          New / Open adopt + F3 jump-to-node
   tui/form_textarea.rs    FormEdit textarea layout
   tui/export.rs           TUI p / Shift+E
   tui/util.rs             open_in_browser, list_dir_entries
@@ -74,13 +75,16 @@ template.json  --emit-->  template.mjml  --mjml-->  template.html
 
 ```
 loop:
-  tick_autosave(now)              # rewrite template.json 2s after a change
-  drain_watch_errors()            # mjml -w stderr → modal
-  terminal.draw(|f| self.draw(f)) # 3-line header + master/detail + 1-line footer
-  if event::poll(100ms):
-    handle_event(evt)
-    mark_dirty_if_changed()
+  tick_autosave / drain_watch_errors / drain_export
+  prune toasts
+  draw if the frame changed
+  poll until next wake (toast TTL, autosave 2s, export job) or input
+  drain pending events
+  redraw only when handle_event reports a change
+    (skip KeyEventKind::Release, mouse Moved/Drag/Up, focus; Resize redraws)
 ```
+
+`Shift+E` compiles MJML off the UI thread. `p` starts `mjml -w` and opens the browser without sleeping on the first compile; the wrapper shows `compiling...` until `/__mtime` advances.
 
 Body is master/detail (Structure tree + Details inspector), not siteforge's Regions/Pages/Layout. Below 48 columns, Structure only.
 
@@ -90,13 +94,16 @@ Body is master/detail (Structure tree + Details inspector), not siteforge's Regi
 |---|---|
 | `F1` | Help |
 | `F2` | Theme source + sampled tokens |
-| `F3` | Validate (modal on errors, toast otherwise) |
+| `F3` | Validate (modal on errors; Enter jumps to the node/field) |
+| `n` | New template (starter + folder; confirms if dirty) |
+| `o` | Open `template.json` or a folder (confirms if dirty) |
 | `p` | Preview (mjml -w + loopback wrapper) |
 | `Shift+E` | Export `template.mjml` + `template.html` next to the JSON |
 | `s` | Save JSON + `.backup` |
 | `/` | Insert picker (legal kinds only) |
 | `Enter` | FormEdit |
 | `d` / `y` / `u` | Delete / duplicate / undo (cap 20) |
+| `U` / `Ctrl+R` | Redo |
 | `J` / `K` | Reorder |
 | `C` / `V` | Add / remove column (equal-% rebalance) |
 | `c` / `v` | Prev / next column |

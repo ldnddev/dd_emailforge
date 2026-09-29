@@ -82,12 +82,16 @@ impl App {
                     });
                     return Some(ModalResult::Continue);
                 }
-                let Some(template) = self.template.as_mut() else {
-                    self.form_textarea_expanded = false;
-                    self.push_toast(ToastLevel::Warning, "No template open.");
-                    return Some(ModalResult::CloseCancel);
+                self.push_undo();
+                let applied = match self.template.as_mut() {
+                    Some(template) => crate::tui::cursor::apply_form(template, &cursor, &state),
+                    None => {
+                        self.form_textarea_expanded = false;
+                        self.push_toast(ToastLevel::Warning, "No template open.");
+                        return Some(ModalResult::CloseCancel);
+                    }
                 };
-                match crate::tui::cursor::apply_form(template, &cursor, &state) {
+                match applied {
                     Ok(()) => {
                         self.form_textarea_expanded = false;
                         let msg = format!("Saved {}.", state.form.title);
@@ -95,6 +99,9 @@ impl App {
                         return Some(ModalResult::CloseSuccess);
                     }
                     Err(e) => {
+                        if let Some(prev) = self.undo_stack.pop() {
+                            self.template = Some(prev);
+                        }
                         self.push_toast(ToastLevel::Warning, format!("Save failed: {e}"));
                         self.modal = Some(Modal::FormEdit {
                             state,
@@ -436,6 +443,38 @@ impl App {
             _ => {}
         }
 
+        Some(ModalResult::Continue)
+    }
+
+    pub(in crate::tui) fn paste_into_form_edit(&mut self, text: &str) -> Option<ModalResult> {
+        use crate::tui::editform;
+        use crate::tui::form_textarea::{insert_str, sanitize_paste};
+
+        let Some(Modal::FormEdit {
+            state, cursor_pos, ..
+        }) = self.modal.as_mut()
+        else {
+            return Some(ModalResult::Continue);
+        };
+        let Some(field) = state.form.fields.get(state.focused_field) else {
+            return Some(ModalResult::Continue);
+        };
+        let keep_newlines = matches!(field.kind, editform::FieldKind::Textarea { .. });
+        let accepts_text = matches!(
+            field.kind,
+            editform::FieldKind::Text { .. }
+                | editform::FieldKind::Url { .. }
+                | editform::FieldKind::Textarea { .. }
+        );
+        if !accepts_text {
+            return Some(ModalResult::Continue);
+        }
+        let field_id = field.id;
+        let insert = sanitize_paste(text, keep_newlines);
+        let current = state.get(field_id).to_string();
+        let (new, pos) = insert_str(&current, *cursor_pos, &insert);
+        state.set(field_id, new);
+        *cursor_pos = pos;
         Some(ModalResult::Continue)
     }
 

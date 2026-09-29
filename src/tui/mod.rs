@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 pub(super) use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
-    MouseEventKind,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -36,6 +36,7 @@ mod form_textarea;
 mod help;
 mod insert;
 mod modals;
+mod session;
 mod theme;
 mod toasts;
 mod tree;
@@ -52,7 +53,10 @@ use toasts::*;
 
 pub(in crate::tui) use modals::{ConfirmKind, ImagePickerState, Modal, ModalResult};
 
+pub(super) const EMPTY_TEMPLATE_HINT: &str = "No template open. n: New   o: Open";
 pub(super) const AUTOSAVE_DEBOUNCE: Duration = Duration::from_secs(2);
+const EXPORT_POLL: Duration = Duration::from_millis(50);
+const IDLE_POLL: Duration = Duration::from_secs(3600);
 
 pub fn run_tui(path: Option<PathBuf>) -> anyhow::Result<()> {
     let (theme, theme_source, load_warning) = AppTheme::load();
@@ -73,7 +77,12 @@ pub fn run_tui(path: Option<PathBuf>) -> anyhow::Result<()> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -89,10 +98,7 @@ pub fn run_tui(path: Option<PathBuf>) -> anyhow::Result<()> {
         app.push_toast(ToastLevel::Warning, msg);
     }
     if app.template.is_none() && load_error.is_none() {
-        app.push_toast(
-            ToastLevel::Info,
-            "No template open. Run: dd_emailforge init <dir>",
-        );
+        app.push_toast(ToastLevel::Info, EMPTY_TEMPLATE_HINT);
     }
     if let Some(msg) = load_error {
         app.modal = Some(Modal::LoadError { message: msg });
@@ -119,7 +125,8 @@ pub fn run_tui(path: Option<PathBuf>) -> anyhow::Result<()> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        DisableBracketedPaste
     )?;
     terminal.show_cursor()?;
 
@@ -148,6 +155,7 @@ pub(super) struct App {
     dirty_since: Option<std::time::Instant>,
     last_saved_json: String,
     preview: Option<crate::preview::PreviewSession>,
+    export_rx: Option<std::sync::mpsc::Receiver<export::ExportJobResult>>,
     pane: tree::PaneFocus,
     selected_row: usize,
     collapsed: HashSet<tree::TreeId>,
@@ -159,6 +167,7 @@ pub(super) struct App {
     details_visible: bool,
     last_click: Option<(u16, u16, Instant)>,
     undo_stack: Vec<Template>,
+    redo_stack: Vec<Template>,
     form_field_areas: RefCell<Vec<(Rect, usize)>>,
     details_hit_areas: Vec<(Rect, tree::TreeId)>,
     details_sync_id: Option<tree::TreeId>,
@@ -209,6 +218,7 @@ impl App {
             dirty_since: None,
             last_saved_json,
             preview: None,
+            export_rx: None,
             pane: tree::PaneFocus::Structure,
             selected_row: 0,
             collapsed: HashSet::new(),
@@ -220,6 +230,7 @@ impl App {
             details_visible: false,
             last_click: None,
             undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
             form_field_areas: RefCell::new(Vec::new()),
             details_hit_areas: Vec::new(),
             details_sync_id: None,
@@ -238,19 +249,81 @@ impl App {
     where
         B::Error: std::error::Error + Send + Sync + 'static,
     {
+        let mut needs_draw = true;
         while !self.should_quit {
-            self.tick_autosave(std::time::Instant::now());
-            self.drain_watch_errors();
-            terminal.draw(|f| self.draw(f))?;
+            if self.tick_autosave(std::time::Instant::now()) {
+                needs_draw = true;
+            }
+            if self.drain_watch_errors() {
+                needs_draw = true;
+            }
+            if self.drain_export() {
+                needs_draw = true;
+            }
+            let before = self.toasts.len();
+            self.prune_toasts();
+            if self.toasts.len() != before {
+                needs_draw = true;
+            }
 
-            if event::poll(Duration::from_millis(100))? {
-                let evt = event::read()?;
-                self.handle_event(evt)?;
-                self.mark_dirty_if_changed();
+            if needs_draw {
+                terminal.draw(|f| self.draw(f))?;
+                needs_draw = false;
+            }
+
+            let timeout = self
+                .next_wake(std::time::Instant::now())
+                .unwrap_or(IDLE_POLL);
+            if event::poll(timeout)? {
+                loop {
+                    let evt = event::read()?;
+                    if self.handle_event(evt)? {
+                        self.mark_dirty_if_changed();
+                        needs_draw = true;
+                    }
+                    if !event::poll(Duration::ZERO)? {
+                        break;
+                    }
+                }
             }
         }
 
         Ok(())
+    }
+
+    pub(super) fn next_wake(&self, now: std::time::Instant) -> Option<Duration> {
+        let mut soonest: Option<Duration> = None;
+        let consider = |soonest: &mut Option<Duration>, d: Duration| {
+            *soonest = Some(soonest.map_or(d, |s| s.min(d)));
+        };
+
+        for t in &self.toasts {
+            let elapsed = now.saturating_duration_since(t.shown_at);
+            if elapsed < TOAST_TTL {
+                consider(&mut soonest, TOAST_TTL - elapsed);
+            } else {
+                consider(&mut soonest, Duration::ZERO);
+            }
+        }
+
+        if self.dirty && self.path.is_some() {
+            if let Some(since) = self.dirty_since {
+                let elapsed = now.saturating_duration_since(since);
+                if elapsed < AUTOSAVE_DEBOUNCE {
+                    consider(&mut soonest, AUTOSAVE_DEBOUNCE - elapsed);
+                } else {
+                    consider(&mut soonest, Duration::ZERO);
+                }
+            } else {
+                consider(&mut soonest, Duration::ZERO);
+            }
+        }
+
+        if self.export_rx.is_some() {
+            consider(&mut soonest, EXPORT_POLL);
+        }
+
+        soonest
     }
 
     pub(super) fn footer_hint(&self, width: u16) -> String {
@@ -262,15 +335,14 @@ impl App {
                 &["F1:Help", "Esc:Close", "Ctrl+Q:Quit"]
             }
         } else if width < 80 {
-            &[
-                "F1:Help", "F2:Theme", "F3:Val", "p:Prev", "s:Save", "C-q:Quit",
-            ]
+            &["F1:Help", "F3:Val", "n:New", "o:Open", "s:Save", "C-q:Quit"]
         } else if width < 120 {
             &[
                 "F1: Help",
                 "F2: Theme",
                 "F3: Validate",
-                "p: Preview",
+                "n: New",
+                "o: Open",
                 "s: Save",
                 "/: Insert",
                 "Ctrl+Q: Quit",
@@ -280,10 +352,13 @@ impl App {
                 "F1: Help",
                 "F2: Theme",
                 "F3: Validate",
+                "n: New",
+                "o: Open",
                 "p: Preview",
                 "Shift+E: Export",
                 "s: Save",
                 "/: Insert",
+                "u/U: Undo/Redo",
                 "Ctrl+Q: Quit",
                 "(mouse: click/scroll)",
             ]
@@ -322,22 +397,22 @@ impl App {
         Ok(())
     }
 
-    pub(super) fn tick_autosave(&mut self, now: std::time::Instant) {
+    pub(super) fn tick_autosave(&mut self, now: std::time::Instant) -> bool {
         if !self.dirty {
-            return;
+            return false;
         }
         let Some(since) = self.dirty_since else {
             self.dirty_since = Some(now);
-            return;
+            return false;
         };
         if now.duration_since(since) < AUTOSAVE_DEBOUNCE {
-            return;
+            return false;
         }
         let Some(path) = self.path.clone() else {
-            return;
+            return false;
         };
         let Some(template) = self.template.as_ref() else {
-            return;
+            return false;
         };
         match storage::save_template(&path, template) {
             Ok(()) => {
@@ -345,19 +420,18 @@ impl App {
                 self.dirty = false;
                 self.dirty_since = None;
                 self.write_mjml_sidecar();
+                true
             }
             Err(e) => {
                 self.push_toast(ToastLevel::Error, format!("Autosave failed: {e}"));
+                true
             }
         }
     }
 
     pub(super) fn begin_save(&mut self) {
         if self.template.is_none() {
-            self.push_toast(
-                ToastLevel::Warning,
-                "No template open. Run: dd_emailforge init <dir>",
-            );
+            self.push_toast(ToastLevel::Warning, EMPTY_TEMPLATE_HINT);
             return;
         }
         if let Some(path) = self.path.clone() {

@@ -15,12 +15,19 @@ pub(in crate::tui) enum Modal {
     SavePrompt {
         path: String,
     },
+    OpenPrompt {
+        path: String,
+    },
+    NewPrompt {
+        path: String,
+        starter: crate::starters::StarterKind,
+    },
     ConfirmPrompt {
         message: String,
         on_confirm: ConfirmKind,
     },
     ValidationErrors {
-        errors: Vec<String>,
+        errors: Vec<crate::validate::ValidateIssue>,
         scroll_offset: usize,
     },
     MjmlMissing {
@@ -63,6 +70,8 @@ pub(in crate::tui) enum ImagePickBinding {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui) enum ConfirmKind {
     QuitUnsaved,
+    OpenUnsaved,
+    NewUnsaved,
 }
 
 #[derive(Debug)]

@@ -1,69 +1,228 @@
 //! Keyboard and mouse dispatch for chrome (F1/F2/F3/s/Ctrl+Q).
 use super::*;
 
+/// Inputs that cannot change the frame. Mouse capture streams `Moved`/`Drag`
+/// continuously; Release fires on Kitty/Ghostty/WezTerm/Windows.
+fn is_idle_input(evt: &Event) -> bool {
+    match evt {
+        Event::FocusGained | Event::FocusLost => true,
+        Event::Key(k) => matches!(k.kind, KeyEventKind::Release),
+        Event::Mouse(m) => !matches!(
+            m.kind,
+            MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+        ),
+        _ => false,
+    }
+}
+
 impl App {
-    pub(super) fn handle_event(&mut self, evt: Event) -> anyhow::Result<()> {
+    /// Returns whether the frame changed and needs a redraw.
+    pub(super) fn handle_event(&mut self, evt: Event) -> anyhow::Result<bool> {
+        if matches!(evt, Event::Resize(_, _)) {
+            return Ok(true);
+        }
+        if is_idle_input(&evt) {
+            return Ok(false);
+        }
+
         if self.show_help {
-            match evt {
-                Event::Key(k) => match k.code {
-                    KeyCode::F(1) | KeyCode::Esc => {
-                        self.show_help = false;
-                        self.help_scroll = 0;
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.help_scroll =
-                            self.help_scroll.saturating_add(1).min(self.help_scroll_max);
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.help_scroll = self.help_scroll.saturating_sub(1);
-                    }
-                    KeyCode::PageDown => {
-                        self.help_scroll = self
-                            .help_scroll
-                            .saturating_add(10)
-                            .min(self.help_scroll_max);
-                    }
-                    KeyCode::PageUp => {
-                        self.help_scroll = self.help_scroll.saturating_sub(10);
-                    }
-                    KeyCode::Home | KeyCode::Char('g') => {
-                        self.help_scroll = 0;
-                    }
-                    KeyCode::End | KeyCode::Char('G') => {
-                        self.help_scroll = self.help_scroll_max;
-                    }
-                    _ => {}
-                },
-                Event::Mouse(m) => match m.kind {
-                    MouseEventKind::ScrollUp => {
-                        self.help_scroll = self.help_scroll.saturating_sub(3);
-                    }
-                    MouseEventKind::ScrollDown => {
-                        self.help_scroll =
-                            self.help_scroll.saturating_add(3).min(self.help_scroll_max);
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-            return Ok(());
+            return Ok(self.handle_help_event(evt));
         }
 
         if self.show_theme {
-            match evt {
-                Event::Key(k) => {
-                    if k.code == KeyCode::F(2) {
-                        if let Some(mut editor) = self.theme_editor.take() {
-                            editor.revert();
-                            super::theme::apply_palette(&mut self.theme, &editor.palette);
-                        }
-                        self.show_theme = false;
-                        self.theme_scroll = 0;
-                    } else if let Some(ek) = map_editor_key(k) {
-                        self.dispatch_theme_editor(ek, k.modifiers.contains(KeyModifiers::SHIFT));
+            return Ok(self.handle_theme_event(evt));
+        }
+
+        if self.modal.is_some() {
+            // Only FormEdit consumes mouse; other dialogs ignore it.
+            if matches!(evt, Event::Mouse(_)) && !matches!(self.modal, Some(Modal::FormEdit { .. }))
+            {
+                return Ok(false);
+            }
+            let _ = self.handle_modal_event(evt);
+            return Ok(true);
+        }
+
+        let changed = match evt {
+            Event::Key(k) => match k.code {
+                KeyCode::F(1) => {
+                    self.show_help = true;
+                    true
+                }
+                KeyCode::F(2) => {
+                    self.show_theme = true;
+                    self.theme_editor = Some(ldnddev_theme::ThemeEditor::new(
+                        super::theme::palette_from_theme(&self.theme),
+                        super::theme::extra_theme_fields(),
+                    ));
+                    true
+                }
+                KeyCode::F(3) => {
+                    self.open_validation_modal();
+                    true
+                }
+                KeyCode::Char('n') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.request_new();
+                    true
+                }
+                KeyCode::Char('o') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.request_open();
+                    true
+                }
+                KeyCode::Char('p') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.begin_preview();
+                    true
+                }
+                KeyCode::Char('E') if k.modifiers.contains(KeyModifiers::SHIFT) => {
+                    self.begin_export();
+                    true
+                }
+                KeyCode::Char('s') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.begin_save();
+                    true
+                }
+                KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.request_quit();
+                    true
+                }
+                KeyCode::Tab | KeyCode::BackTab => {
+                    if self.details_visible {
+                        self.pane = match self.pane {
+                            super::tree::PaneFocus::Structure => super::tree::PaneFocus::Details,
+                            super::tree::PaneFocus::Details => super::tree::PaneFocus::Structure,
+                        };
+                        true
+                    } else {
+                        false
                     }
                 }
-                Event::Mouse(m) => match m.kind {
+                KeyCode::Enter => {
+                    self.tree_enter();
+                    true
+                }
+                KeyCode::Char('/') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.open_insert_picker();
+                    true
+                }
+                KeyCode::Char('d') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.delete_selected_row();
+                    true
+                }
+                KeyCode::Char('y') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.duplicate_selected_row();
+                    true
+                }
+                KeyCode::Char('u') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.undo_last();
+                    true
+                }
+                KeyCode::Char('U') => {
+                    self.redo_last();
+                    true
+                }
+                KeyCode::Char('r') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.redo_last();
+                    true
+                }
+                KeyCode::Char('J') => {
+                    self.reorder_selected(1);
+                    true
+                }
+                KeyCode::Char('K') => {
+                    self.reorder_selected(-1);
+                    true
+                }
+                KeyCode::Char('C') => {
+                    self.add_column();
+                    true
+                }
+                KeyCode::Char('V') => {
+                    self.remove_column();
+                    true
+                }
+                KeyCode::Char('c') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.hop_column(-1);
+                    true
+                }
+                KeyCode::Char('v') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.hop_column(1);
+                    true
+                }
+                _ => self.handle_tree_nav(k),
+            },
+            Event::Mouse(m) => self.handle_tree_mouse(m),
+            _ => false,
+        };
+
+        Ok(changed)
+    }
+
+    fn handle_help_event(&mut self, evt: Event) -> bool {
+        let before = (self.show_help, self.help_scroll);
+        match evt {
+            Event::Key(k) => match k.code {
+                KeyCode::F(1) | KeyCode::Esc => {
+                    self.show_help = false;
+                    self.help_scroll = 0;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.help_scroll = self.help_scroll.saturating_add(1).min(self.help_scroll_max);
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.help_scroll = self.help_scroll.saturating_sub(1);
+                }
+                KeyCode::PageDown => {
+                    self.help_scroll = self
+                        .help_scroll
+                        .saturating_add(10)
+                        .min(self.help_scroll_max);
+                }
+                KeyCode::PageUp => {
+                    self.help_scroll = self.help_scroll.saturating_sub(10);
+                }
+                KeyCode::Home | KeyCode::Char('g') => {
+                    self.help_scroll = 0;
+                }
+                KeyCode::End | KeyCode::Char('G') => {
+                    self.help_scroll = self.help_scroll_max;
+                }
+                _ => {}
+            },
+            Event::Mouse(m) => match m.kind {
+                MouseEventKind::ScrollUp => {
+                    self.help_scroll = self.help_scroll.saturating_sub(3);
+                }
+                MouseEventKind::ScrollDown => {
+                    self.help_scroll = self.help_scroll.saturating_add(3).min(self.help_scroll_max);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        (self.show_help, self.help_scroll) != before
+    }
+
+    fn handle_theme_event(&mut self, evt: Event) -> bool {
+        match evt {
+            Event::Key(k) => {
+                if k.code == KeyCode::F(2) {
+                    if let Some(mut editor) = self.theme_editor.take() {
+                        editor.revert();
+                        super::theme::apply_palette(&mut self.theme, &editor.palette);
+                    }
+                    self.show_theme = false;
+                    self.theme_scroll = 0;
+                    true
+                } else if let Some(ek) = map_editor_key(k) {
+                    self.dispatch_theme_editor(ek, k.modifiers.contains(KeyModifiers::SHIFT));
+                    true
+                } else {
+                    false
+                }
+            }
+            Event::Mouse(m) => {
+                let before = self.theme_scroll;
+                match m.kind {
                     MouseEventKind::ScrollUp => {
                         self.theme_scroll = self.theme_scroll.saturating_sub(3);
                     }
@@ -73,87 +232,22 @@ impl App {
                             .saturating_add(3)
                             .min(self.theme_scroll_max);
                     }
-                    _ => {}
-                },
-                _ => {}
+                    _ => return false,
+                }
+                self.theme_scroll != before
             }
-            return Ok(());
+            _ => false,
         }
-
-        if let Some(result) = self.handle_modal_event(evt.clone()) {
-            match result {
-                ModalResult::Continue | ModalResult::CloseSuccess | ModalResult::CloseCancel => {
-                    return Ok(());
-                }
-            }
-        }
-
-        match evt {
-            Event::Key(k) => match k.code {
-                KeyCode::F(1) => self.show_help = true,
-                KeyCode::F(2) => {
-                    self.show_theme = true;
-                    self.theme_editor = Some(ldnddev_theme::ThemeEditor::new(
-                        super::theme::palette_from_theme(&self.theme),
-                        super::theme::extra_theme_fields(),
-                    ));
-                }
-                KeyCode::F(3) => self.open_validation_modal(),
-                KeyCode::Char('p') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.begin_preview();
-                }
-                KeyCode::Char('E') if k.modifiers.contains(KeyModifiers::SHIFT) => {
-                    self.begin_export();
-                }
-                KeyCode::Char('s') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.begin_save();
-                }
-                KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.request_quit();
-                }
-                KeyCode::Tab | KeyCode::BackTab => {
-                    if self.details_visible {
-                        self.pane = match self.pane {
-                            super::tree::PaneFocus::Structure => super::tree::PaneFocus::Details,
-                            super::tree::PaneFocus::Details => super::tree::PaneFocus::Structure,
-                        };
-                    }
-                }
-                KeyCode::Enter => self.tree_enter(),
-                KeyCode::Char('/') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.open_insert_picker();
-                }
-                KeyCode::Char('d') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.delete_selected_row();
-                }
-                KeyCode::Char('y') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.duplicate_selected_row();
-                }
-                KeyCode::Char('u') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.undo_last();
-                }
-                KeyCode::Char('J') => self.reorder_selected(1),
-                KeyCode::Char('K') => self.reorder_selected(-1),
-                KeyCode::Char('C') => self.add_column(),
-                KeyCode::Char('V') => self.remove_column(),
-                KeyCode::Char('c') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.hop_column(-1);
-                }
-                KeyCode::Char('v') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.hop_column(1);
-                }
-                _ => self.handle_tree_nav(k),
-            },
-            Event::Mouse(m) => self.handle_tree_mouse(m),
-            _ => {}
-        }
-
-        Ok(())
     }
 
-    fn handle_tree_nav(&mut self, k: event::KeyEvent) {
+    fn handle_tree_nav(&mut self, k: event::KeyEvent) -> bool {
         use super::tree::PaneFocus;
         let details = self.pane == PaneFocus::Details && self.details_visible;
+        let before = (
+            self.selected_row,
+            self.details_scroll,
+            self.collapsed.clone(),
+        );
         match k.code {
             KeyCode::Down | KeyCode::Char('j') if !details => self.tree_move(1),
             KeyCode::Up | KeyCode::Char('k') if !details => self.tree_move(-1),
@@ -198,13 +292,27 @@ impl App {
             KeyCode::Char(' ') if !details => self.tree_toggle_expand(),
             _ => {}
         }
+        (
+            self.selected_row,
+            self.details_scroll,
+            self.collapsed.clone(),
+        ) != before
     }
 
-    fn handle_tree_mouse(&mut self, m: event::MouseEvent) {
+    fn handle_tree_mouse(&mut self, m: event::MouseEvent) -> bool {
         use super::tree::PaneFocus;
         let (x, y) = (m.column, m.row);
         let in_tree = contains(self.tree_area, x, y);
         let in_details = self.details_visible && contains(self.details_area, x, y);
+        let before = (
+            self.selected_row,
+            self.tree_scroll,
+            self.details_scroll,
+            self.pane,
+            self.collapsed.clone(),
+            self.modal.is_some(),
+            self.toasts.len(),
+        );
         match m.kind {
             MouseEventKind::ScrollUp if in_details => {
                 self.details_scroll = self.details_scroll.saturating_sub(3);
@@ -267,6 +375,15 @@ impl App {
             }
             _ => {}
         }
+        (
+            self.selected_row,
+            self.tree_scroll,
+            self.details_scroll,
+            self.pane,
+            self.collapsed.clone(),
+            self.modal.is_some(),
+            self.toasts.len(),
+        ) != before
     }
 
     fn dispatch_theme_editor(&mut self, ek: ldnddev_theme::EditorKey, shift: bool) {

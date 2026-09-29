@@ -5,16 +5,138 @@ use crate::model::{
     MjHero, MjSection, MjSocialElement, MjWrapper, SectionChild, SocialNetwork, Template,
 };
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeStep {
+    BodyNode(usize),
+    WrapperChild(usize),
+    SectionChild(usize),
+    GroupCol(usize),
+    ColComp(usize),
+    HeroChild(usize),
+    NavbarLink(usize),
+    AccordionEl(usize),
+    CarouselImg(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidateLoc {
+    Head,
+    Brand,
+    Body,
+    Node(Vec<NodeStep>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidateIssue {
+    pub message: String,
+    pub loc: Option<ValidateLoc>,
+    pub field: Option<String>,
+}
+
+impl ValidateIssue {
+    pub fn contains(&self, needle: &str) -> bool {
+        self.message.contains(needle)
+    }
+}
+
+impl std::fmt::Display for ValidateIssue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+#[derive(Debug, Clone)]
+enum LocFrame {
+    Head,
+    Brand,
+    Body,
+    Step(NodeStep),
+}
+
+#[derive(Debug, Clone)]
 pub struct ValidateReport {
-    pub errors: Vec<String>,
-    pub warnings: Vec<String>,
+    pub errors: Vec<ValidateIssue>,
+    pub warnings: Vec<ValidateIssue>,
+    stack: Vec<LocFrame>,
+}
+
+impl Default for ValidateReport {
+    fn default() -> Self {
+        Self {
+            errors: Vec::new(),
+            warnings: Vec::new(),
+            stack: Vec::new(),
+        }
+    }
 }
 
 impl ValidateReport {
     pub fn ok(&self) -> bool {
         self.errors.is_empty()
     }
+
+    fn loc(&self) -> Option<ValidateLoc> {
+        let mut path = Vec::new();
+        let mut base = None;
+        for frame in &self.stack {
+            match frame {
+                LocFrame::Head => base = Some(ValidateLoc::Head),
+                LocFrame::Brand => base = Some(ValidateLoc::Brand),
+                LocFrame::Body => base = Some(ValidateLoc::Body),
+                LocFrame::Step(s) => path.push(*s),
+            }
+        }
+        if path.is_empty() {
+            base
+        } else {
+            Some(ValidateLoc::Node(path))
+        }
+    }
+
+    fn error(&mut self, message: impl Into<String>) {
+        self.errors.push(ValidateIssue {
+            message: message.into(),
+            loc: self.loc(),
+            field: None,
+        });
+    }
+
+    fn error_field(&mut self, field: &str, message: impl Into<String>) {
+        self.errors.push(ValidateIssue {
+            message: message.into(),
+            loc: self.loc(),
+            field: Some(form_field_id(field)),
+        });
+    }
+
+    fn warning(&mut self, message: impl Into<String>) {
+        self.warnings.push(ValidateIssue {
+            message: message.into(),
+            loc: self.loc(),
+            field: None,
+        });
+    }
+
+    fn with_loc<R>(&mut self, frame: LocFrame, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.stack.push(frame);
+        let out = f(self);
+        self.stack.pop();
+        out
+    }
+}
+
+fn form_field_id(validate_name: &str) -> String {
+    if validate_name.contains("fonts[") {
+        return "fonts".to_string();
+    }
+    validate_name
+        .rsplit('.')
+        .next()
+        .unwrap_or(validate_name)
+        .split('[')
+        .next()
+        .unwrap_or(validate_name)
+        .to_string()
 }
 
 #[derive(Clone, Copy)]
@@ -60,84 +182,83 @@ pub fn validate_template_for_export(t: &Template, root: Option<&Path>) -> Valida
 fn validate_inner(t: &Template, root: Option<&Path>, opts: ValidateOpts<'_>) -> ValidateReport {
     let mut report = ValidateReport::default();
     if t.version != 1 {
-        report
-            .errors
-            .push(format!("version must be 1, got {}", t.version));
-    }
-    require_nonempty(&mut report, "name", &t.name);
-    require_nonempty(&mut report, "subject", &t.subject);
-    require_nonempty(&mut report, "head.title", &t.head.title);
-    require_nonempty(&mut report, "lang", &t.lang);
-    check_one_of(&mut report, "dir", &t.dir, &["auto", "ltr", "rtl"]);
-
-    if !(320..=800).contains(&t.brand.content_width) {
-        report.errors.push(format!(
-            "brand.content_width must be 320..=800, got {}",
-            t.brand.content_width
-        ));
+        report.error(format!("version must be 1, got {}", t.version));
     }
 
-    check_color(&mut report, "brand.text_color", &t.brand.text_color);
-    check_color(
-        &mut report,
-        "brand.background_color",
-        &t.brand.background_color,
-    );
-    check_color(
-        &mut report,
-        "brand.button_background",
-        &t.brand.button_background,
-    );
-    check_color(&mut report, "brand.button_color", &t.brand.button_color);
-    check_color(
-        &mut report,
-        "body.background_color",
-        &t.body.background_color,
-    );
+    report.with_loc(LocFrame::Head, |report| {
+        require_nonempty(report, "name", &t.name);
+        require_nonempty(report, "subject", &t.subject);
+        require_nonempty(report, "head.title", &t.head.title);
+        require_nonempty(report, "lang", &t.lang);
+        check_one_of(report, "dir", &t.dir, &["auto", "ltr", "rtl"]);
+        validate_fonts(t, report);
+        validate_json_ld(t, report);
+        validate_css(t, report);
+    });
 
-    validate_fonts(t, &mut report);
-    validate_json_ld(t, &mut report);
-    validate_css(t, &mut report);
+    report.with_loc(LocFrame::Brand, |report| {
+        if !(320..=800).contains(&t.brand.content_width) {
+            report.error_field(
+                "content_width",
+                format!(
+                    "brand.content_width must be 320..=800, got {}",
+                    t.brand.content_width
+                ),
+            );
+        }
+        check_color(report, "brand.text_color", &t.brand.text_color);
+        check_color(report, "brand.background_color", &t.brand.background_color);
+        check_color(
+            report,
+            "brand.button_background",
+            &t.brand.button_background,
+        );
+        check_color(report, "brand.button_color", &t.brand.button_color);
+    });
 
     let mut font_haystack = t.brand.font_family.clone();
     let mut relative_images = false;
-    for node in &t.body.nodes {
-        walk_body(
-            node,
-            &mut report,
-            root,
-            opts,
-            &mut font_haystack,
-            &mut relative_images,
-        );
-    }
-
-    for font in &t.head.fonts {
-        let name = font.name.trim();
-        if !name.is_empty()
-            && !font_haystack
-                .to_ascii_lowercase()
-                .contains(&name.to_ascii_lowercase())
-        {
-            report.warnings.push(format!(
-                "font '{}' is registered but not used in brand.font_family or any node font_family",
-                font.name
-            ));
+    report.with_loc(LocFrame::Body, |report| {
+        check_color(report, "body.background_color", &t.body.background_color);
+        for (i, node) in t.body.nodes.iter().enumerate() {
+            report.with_loc(LocFrame::Step(NodeStep::BodyNode(i)), |report| {
+                walk_body(
+                    node,
+                    report,
+                    root,
+                    opts,
+                    &mut font_haystack,
+                    &mut relative_images,
+                );
+            });
         }
-    }
+    });
 
-    if relative_images && t.base_url.trim().is_empty() && !opts.export {
-        report
-            .warnings
-            .push("base_url is empty while relative images exist".to_string());
-    }
+    report.with_loc(LocFrame::Head, |report| {
+        for font in &t.head.fonts {
+            let name = font.name.trim();
+            if !name.is_empty()
+                && !font_haystack
+                    .to_ascii_lowercase()
+                    .contains(&name.to_ascii_lowercase())
+            {
+                report.warning(format!(
+                    "font '{}' is registered but not used in brand.font_family or any node font_family",
+                    font.name
+                ));
+            }
+        }
+        if relative_images && t.base_url.trim().is_empty() && !opts.export {
+            report.warning("base_url is empty while relative images exist".to_string());
+        }
+    });
 
     report
 }
 
 fn require_nonempty(report: &mut ValidateReport, field: &str, value: &str) {
     if value.trim().is_empty() {
-        report.errors.push(format!("{field} is empty"));
+        report.error_field(field, format!("{field} is empty"));
     }
 }
 
@@ -147,9 +268,7 @@ fn check_color(report: &mut ValidateReport, field: &str, value: &str) {
         return;
     }
     if !is_hex_color(v) {
-        report
-            .errors
-            .push(format!("{field} must be #RRGGBB, got '{value}'"));
+        report.error_field(field, format!("{field} must be #RRGGBB, got '{value}'"));
     }
 }
 
@@ -162,20 +281,24 @@ fn validate_fonts(t: &Template, report: &mut ValidateReport) {
     let mut seen = Vec::new();
     for (i, font) in t.head.fonts.iter().enumerate() {
         if font.name.trim().is_empty() {
-            report.errors.push(format!("head.fonts[{i}].name is empty"));
+            report.error_field(
+                "head.fonts[i].name",
+                format!("head.fonts[{i}].name is empty"),
+            );
         }
         let key = font.name.trim().to_ascii_lowercase();
         if !key.is_empty() && seen.iter().any(|s: &String| s == &key) {
-            report
-                .errors
-                .push(format!("duplicate font name '{}'", font.name));
+            report.error(format!("duplicate font name '{}'", font.name));
         }
         seen.push(key);
         if !is_google_fonts_css_url(&font.href) {
-            report.errors.push(format!(
-                "head.fonts[{i}].href must be a Google Fonts CSS URL, got '{}'",
-                font.href
-            ));
+            report.error_field(
+                "head.fonts[i].href",
+                format!(
+                    "head.fonts[{i}].href must be a Google Fonts CSS URL, got '{}'",
+                    font.href
+                ),
+            );
         }
     }
 }
@@ -196,40 +319,37 @@ fn validate_json_ld(t: &Template, report: &mut ValidateReport) {
             let pretty = serde_json::to_string_pretty(&serde_json::Value::Object(map.clone()))
                 .unwrap_or_default();
             if contains_ci(&pretty, "</script") || contains_ci(&pretty, "</mj-") {
-                report
-                    .errors
-                    .push("head.json_ld pretty form contains a forbidden closer".to_string());
+                report.error_field(
+                    "json_ld",
+                    "head.json_ld pretty form contains a forbidden closer".to_string(),
+                );
             }
             if !map.contains_key("@type") {
-                report
-                    .warnings
-                    .push("head.json_ld has no @type at the root".to_string());
+                report.warning("head.json_ld has no @type at the root".to_string());
             }
         }
         Ok(serde_json::Value::Array(arr)) => {
             let pretty = serde_json::to_string_pretty(&serde_json::Value::Array(arr.clone()))
                 .unwrap_or_default();
             if contains_ci(&pretty, "</script") || contains_ci(&pretty, "</mj-") {
-                report
-                    .errors
-                    .push("head.json_ld pretty form contains a forbidden closer".to_string());
+                report.error_field(
+                    "json_ld",
+                    "head.json_ld pretty form contains a forbidden closer".to_string(),
+                );
             }
             let any_type = arr.iter().any(|v| v.get("@type").is_some());
             if !any_type {
-                report
-                    .warnings
-                    .push("head.json_ld array has no @type on any element".to_string());
+                report.warning("head.json_ld array has no @type on any element".to_string());
             }
         }
         Ok(_) => {
-            report
-                .errors
-                .push("head.json_ld must be a JSON object or array".to_string());
+            report.error_field(
+                "json_ld",
+                "head.json_ld must be a JSON object or array".to_string(),
+            );
         }
         Err(e) => {
-            report
-                .errors
-                .push(format!("head.json_ld is not valid JSON: {e}"));
+            report.error_field("json_ld", format!("head.json_ld is not valid JSON: {e}"));
         }
     }
 }
@@ -240,20 +360,20 @@ fn validate_css(t: &Template, report: &mut ValidateReport) {
         return;
     }
     if contains_ci(css, "</mj-style>") || contains_ci(css, "</mj-") {
-        report
-            .errors
-            .push("head.css contains a forbidden MJML closer".to_string());
+        report.error_field(
+            "css",
+            "head.css contains a forbidden MJML closer".to_string(),
+        );
     }
     if contains_ci(css, "@import") {
-        report
-            .errors
-            .push("head.css must not contain @import".to_string());
+        report.error_field("css", "head.css must not contain @import".to_string());
     }
     for url in css_urls(css) {
         if !url.starts_with("https://fonts.googleapis.com/") {
-            report.errors.push(format!(
-                "head.css url() must be https://fonts.googleapis.com/, got '{url}'"
-            ));
+            report.error_field(
+                "css",
+                format!("head.css url() must be https://fonts.googleapis.com/, got '{url}'"),
+            );
         }
     }
 }
@@ -308,9 +428,7 @@ fn walk_body(
                 opt(&c.background_color),
             );
             if c.button_href.trim().is_empty() {
-                report
-                    .errors
-                    .push("email-cta.button_href is empty".to_string());
+                report.error_field("button_href", "email-cta.button_href is empty".to_string());
             }
         }
         BodyNode::EmailArticle(a) => walk_email_article(a, report, root, opts, relative_images),
@@ -327,7 +445,7 @@ fn check_border_sides(report: &mut ValidateReport, field: &str, value: &Option<S
         return;
     };
     if let Err(e) = crate::border::Sides::from_storage(v) {
-        report.errors.push(format!("{field} {e}"));
+        report.error_field(field, format!("{field} {e}"));
     }
 }
 
@@ -336,10 +454,10 @@ fn check_padding(report: &mut ValidateReport, field: &str, value: &Option<String
         return;
     };
     if crate::padding::normalize_padding(v).is_err() {
-        report.errors.push(format!(
-            "{field} must be {}, got '{v}'",
-            crate::padding::RULE
-        ));
+        report.error_field(
+            field,
+            format!("{field} must be {}, got '{v}'", crate::padding::RULE),
+        );
     }
 }
 
@@ -372,9 +490,12 @@ fn check_button_inner_padding_vs_width(report: &mut ValidateReport, btn: &crate:
         .map(|b| crate::border::horizontal_px(b, btn.border_sides.as_deref()))
         .unwrap_or(0.0);
     if width_px - inner_h - border_h <= 0.0 {
-        report.errors.push(format!(
-            "mj-button inner-padding + border leave no room inside width {width} (MJML collapses the button)"
-        ));
+        report.error_field(
+            "inner_padding",
+            format!(
+                "mj-button inner-padding + border leave no room inside width {width} (MJML collapses the button)"
+            ),
+        );
     }
 }
 
@@ -384,10 +505,13 @@ fn check_one_of(report: &mut ValidateReport, field: &str, value: &str, allowed: 
         return;
     }
     if !allowed.iter().any(|a| *a == v) {
-        report.errors.push(format!(
-            "{field} must be one of {}, got '{value}'",
-            allowed.join("|")
-        ));
+        report.error_field(
+            field,
+            format!(
+                "{field} must be one of {}, got '{value}'",
+                allowed.join("|")
+            ),
+        );
     }
 }
 
@@ -407,10 +531,10 @@ fn check_unit(report: &mut ValidateReport, field: &str, value: &Option<String>) 
     if crate::padding::normalize_padding(v).is_ok() || crate::padding::normalize_unit(v).is_ok() {
         return;
     }
-    report.errors.push(format!(
-        "{field} must be {}, got '{v}'",
-        crate::padding::UNIT_RULE
-    ));
+    report.error_field(
+        field,
+        format!("{field} must be {}, got '{v}'", crate::padding::UNIT_RULE),
+    );
 }
 
 fn walk_section(
@@ -453,17 +577,20 @@ fn walk_section(
         );
     }
     if section.children.is_empty() {
-        report.errors.push("mj-section has no children".to_string());
+        report.error("mj-section has no children".to_string());
     }
-    for child in &section.children {
-        match child {
-            SectionChild::MjColumn(col) => {
-                walk_column(col, report, root, opts, font_haystack, relative_images)
-            }
-            SectionChild::MjGroup(group) => {
-                walk_group(group, report, root, opts, font_haystack, relative_images)
-            }
-        }
+    for (i, child) in section.children.iter().enumerate() {
+        report.with_loc(
+            LocFrame::Step(NodeStep::SectionChild(i)),
+            |report| match child {
+                SectionChild::MjColumn(col) => {
+                    walk_column(col, report, root, opts, font_haystack, relative_images)
+                }
+                SectionChild::MjGroup(group) => {
+                    walk_group(group, report, root, opts, font_haystack, relative_images)
+                }
+            },
+        );
     }
 }
 
@@ -500,15 +627,16 @@ fn walk_wrapper(
             relative_images,
         );
     }
-    for child in &wrapper.children {
-        match child {
-            BodyNode::MjSection(_) | BodyNode::MjHero(_) => {
-                walk_body(child, report, root, opts, font_haystack, relative_images)
-            }
-            _ => report
-                .errors
-                .push("mj-wrapper may only contain mj-section or mj-hero".to_string()),
-        }
+    for (i, child) in wrapper.children.iter().enumerate() {
+        report.with_loc(
+            LocFrame::Step(NodeStep::WrapperChild(i)),
+            |report| match child {
+                BodyNode::MjSection(_) | BodyNode::MjHero(_) => {
+                    walk_body(child, report, root, opts, font_haystack, relative_images)
+                }
+                _ => report.error("mj-wrapper may only contain mj-section or mj-hero".to_string()),
+            },
+        );
     }
 }
 
@@ -538,10 +666,12 @@ fn walk_group(
         &["top", "middle", "bottom"],
     );
     if group.children.is_empty() {
-        report.errors.push("mj-group has no columns".to_string());
+        report.error("mj-group has no columns".to_string());
     }
-    for col in &group.children {
-        walk_column(col, report, root, opts, font_haystack, relative_images);
+    for (i, col) in group.children.iter().enumerate() {
+        report.with_loc(LocFrame::Step(NodeStep::GroupCol(i)), |report| {
+            walk_column(col, report, root, opts, font_haystack, relative_images);
+        });
     }
 }
 
@@ -582,8 +712,10 @@ fn walk_column(
         "mj-column.inner_border_radius",
         &col.inner_border_radius,
     );
-    for child in &col.components {
-        walk_column_child(child, report, root, opts, font_haystack, relative_images);
+    for (i, child) in col.components.iter().enumerate() {
+        report.with_loc(LocFrame::Step(NodeStep::ColComp(i)), |report| {
+            walk_column_child(child, report, root, opts, font_haystack, relative_images);
+        });
     }
 }
 
@@ -619,8 +751,10 @@ fn walk_hero(
             relative_images,
         );
     }
-    for child in &hero.children {
-        walk_column_child(child, report, root, opts, font_haystack, relative_images);
+    for (i, child) in hero.children.iter().enumerate() {
+        report.with_loc(LocFrame::Step(NodeStep::HeroChild(i)), |report| {
+            walk_column_child(child, report, root, opts, font_haystack, relative_images);
+        });
     }
 }
 
@@ -642,9 +776,7 @@ fn walk_column_child(
                 font_haystack.push_str(ff);
             }
             if contains_ci(&text.content, "</mj-") {
-                report
-                    .errors
-                    .push("mj-text.content contains </mj-".to_string());
+                report.error_field("content", "mj-text.content contains </mj-".to_string());
             }
         }
         ColumnChild::MjButton(btn) => {
@@ -672,7 +804,7 @@ fn walk_column_child(
                 font_haystack.push_str(ff);
             }
             if btn.href.trim().is_empty() {
-                report.errors.push("mj-button.href is empty".to_string());
+                report.error_field("href", "mj-button.href is empty".to_string());
             }
         }
         ColumnChild::MjImage(img) => {
@@ -690,7 +822,7 @@ fn walk_column_child(
             check_unit(report, "mj-image.height", &img.height);
             check_opt_one_of(report, "mj-image.target", &img.target, &["_blank", "_self"]);
             if img.alt.trim().is_empty() {
-                report.errors.push("mj-image.alt is empty".to_string());
+                report.error_field("alt", "mj-image.alt is empty".to_string());
             }
         }
         ColumnChild::MjDivider(d) => {
@@ -723,12 +855,11 @@ fn walk_column_child(
                 &["none", "presentation"],
             );
             if contains_ci(&table.content, "</mj-") {
-                report
-                    .errors
-                    .push("mj-table.content contains </mj-".to_string());
+                report.error_field("content", "mj-table.content contains </mj-".to_string());
             }
             if !is_table_inner_fragment(&table.content) {
-                report.errors.push(
+                report.error_field(
+                    "content",
                     "mj-table.content must be table rows (<tr>…</tr>), not a wrapping <table>"
                         .to_string(),
                 );
@@ -744,19 +875,17 @@ fn walk_navbar(nav: &crate::model::MjNavbar, report: &mut ValidateReport) {
     check_color(report, "mj-navbar.ico_color", opt(&nav.ico_color));
     check_padding(report, "mj-navbar.padding", &nav.padding);
     if nav.links.is_empty() {
-        report
-            .warnings
-            .push("mj-navbar has no mj-navbar-link children".to_string());
+        report.warning("mj-navbar has no mj-navbar-link children".to_string());
     }
-    for link in &nav.links {
-        if link.href.trim().is_empty() {
-            report
-                .errors
-                .push("mj-navbar-link.href is empty".to_string());
-        }
-        check_color(report, "mj-navbar-link.color", opt(&link.color));
-        check_padding(report, "mj-navbar-link.padding", &link.padding);
-        check_unit(report, "mj-navbar-link.font_size", &link.font_size);
+    for (i, link) in nav.links.iter().enumerate() {
+        report.with_loc(LocFrame::Step(NodeStep::NavbarLink(i)), |report| {
+            if link.href.trim().is_empty() {
+                report.error_field("href", "mj-navbar-link.href is empty".to_string());
+            }
+            check_color(report, "mj-navbar-link.color", opt(&link.color));
+            check_padding(report, "mj-navbar-link.padding", &link.padding);
+            check_unit(report, "mj-navbar-link.font_size", &link.font_size);
+        });
     }
 }
 
@@ -769,26 +898,25 @@ fn walk_accordion(acc: &crate::model::MjAccordion, report: &mut ValidateReport) 
         &["left", "right"],
     );
     if acc.elements.is_empty() {
-        report
-            .warnings
-            .push("mj-accordion has no mj-accordion-element children".to_string());
+        report.warning("mj-accordion has no mj-accordion-element children".to_string());
     }
-    for el in &acc.elements {
-        if el.title.trim().is_empty() {
-            report
-                .errors
-                .push("mj-accordion-element.title is empty".to_string());
-        }
-        check_color(
-            report,
-            "mj-accordion-element.background_color",
-            opt(&el.background_color),
-        );
-        if contains_ci(&el.content, "</mj-") {
-            report
-                .errors
-                .push("mj-accordion-element.content contains </mj-".to_string());
-        }
+    for (i, el) in acc.elements.iter().enumerate() {
+        report.with_loc(LocFrame::Step(NodeStep::AccordionEl(i)), |report| {
+            if el.title.trim().is_empty() {
+                report.error_field("title", "mj-accordion-element.title is empty".to_string());
+            }
+            check_color(
+                report,
+                "mj-accordion-element.background_color",
+                opt(&el.background_color),
+            );
+            if contains_ci(&el.content, "</mj-") {
+                report.error_field(
+                    "content",
+                    "mj-accordion-element.content contains </mj-".to_string(),
+                );
+            }
+        });
     }
 }
 
@@ -807,48 +935,42 @@ fn walk_carousel(
         &car.tb_border_radius,
     );
     if car.images.is_empty() {
-        report
-            .warnings
-            .push("mj-carousel has no mj-carousel-image children".to_string());
+        report.warning("mj-carousel has no mj-carousel-image children".to_string());
     }
-    for img in &car.images {
-        check_required_image(
-            report,
-            "mj-carousel-image.src",
-            &img.src,
-            root,
-            opts,
-            relative_images,
-        );
-        if img.alt.trim().is_empty() {
-            report
-                .errors
-                .push("mj-carousel-image.alt is empty".to_string());
-        }
-        if let Some(thumb) = &img.thumbnails_src {
-            check_optional_image(
+    for (i, img) in car.images.iter().enumerate() {
+        report.with_loc(LocFrame::Step(NodeStep::CarouselImg(i)), |report| {
+            check_required_image(
                 report,
-                "mj-carousel-image.thumbnails_src",
-                thumb,
+                "mj-carousel-image.src",
+                &img.src,
                 root,
                 opts,
                 relative_images,
             );
-        }
+            if img.alt.trim().is_empty() {
+                report.error_field("alt", "mj-carousel-image.alt is empty".to_string());
+            }
+            if let Some(thumb) = &img.thumbnails_src {
+                check_optional_image(
+                    report,
+                    "mj-carousel-image.thumbnails_src",
+                    thumb,
+                    root,
+                    opts,
+                    relative_images,
+                );
+            }
+        });
     }
 }
 
 fn check_social_element(el: &MjSocialElement, report: &mut ValidateReport) {
     if el.href.trim().is_empty() {
-        report
-            .errors
-            .push("mj-social-element.href is empty".to_string());
+        report.error_field("href", "mj-social-element.href is empty".to_string());
     }
     if el.name == SocialNetwork::Web && el.src.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true)
     {
-        report
-            .warnings
-            .push("social web element has no icon src".to_string());
+        report.warning("social web element has no icon src".to_string());
     }
     check_color(
         report,
@@ -879,9 +1001,10 @@ fn walk_email_header(
         relative_images,
     );
     if !h.logo_src.trim().is_empty() && h.logo_alt.trim().is_empty() {
-        report
-            .errors
-            .push("email-header.logo_alt is required when logo_src is set".to_string());
+        report.error_field(
+            "logo_alt",
+            "email-header.logo_alt is required when logo_src is set".to_string(),
+        );
     }
 }
 
@@ -906,9 +1029,10 @@ fn walk_email_hero(
         relative_images,
     );
     if !h.image_src.trim().is_empty() && h.image_alt.trim().is_empty() {
-        report
-            .errors
-            .push("email-hero.image_alt is required when image_src is set".to_string());
+        report.error_field(
+            "image_alt",
+            "email-hero.image_alt is required when image_src is set".to_string(),
+        );
     }
 }
 
@@ -928,27 +1052,27 @@ fn walk_email_article(
         relative_images,
     );
     if !a.image_src.trim().is_empty() && a.image_alt.trim().is_empty() {
-        report
-            .errors
-            .push("email-article.image_alt is required when image_src is set".to_string());
+        report.error_field(
+            "image_alt",
+            "email-article.image_alt is required when image_src is set".to_string(),
+        );
     }
 }
 
 fn walk_email_footer(f: &EmailFooter, report: &mut ValidateReport) {
     let has_address = f.address_lines.iter().any(|l| !l.trim().is_empty());
     if !has_address {
-        report
-            .errors
-            .push("email-footer.address_lines is empty".to_string());
+        report.error_field(
+            "address_lines",
+            "email-footer.address_lines is empty".to_string(),
+        );
     }
     for el in &f.social {
         check_social_element(el, report);
     }
     if has_address && f.unsubscribe_href.trim().is_empty() && !f.unsubscribe_label.trim().is_empty()
     {
-        report
-            .warnings
-            .push("marketing mail usually needs an unsubscribe link".to_string());
+        report.warning("marketing mail usually needs an unsubscribe link".to_string());
     }
 }
 
@@ -961,7 +1085,7 @@ fn check_required_image(
     relative_images: &mut bool,
 ) {
     if src.trim().is_empty() {
-        report.errors.push(format!("{field} is empty"));
+        report.error_field(field, format!("{field} is empty"));
         return;
     }
     check_image_src(report, field, src, root, opts, relative_images);
@@ -992,9 +1116,7 @@ fn check_image_src(
     let s = src.trim();
     let lower = s.to_ascii_lowercase();
     if lower.starts_with("data:") || lower.starts_with("cid:") {
-        report
-            .errors
-            .push(format!("{field} uses unsupported scheme: {s}"));
+        report.error_field(field, format!("{field} uses unsupported scheme: {s}"));
         return;
     }
     if lower.starts_with("https://") {
@@ -1002,15 +1124,14 @@ fn check_image_src(
     }
     if lower.starts_with("http://") {
         if opts.export {
-            report
-                .errors
-                .push(format!("{field} must be https:// in export, got {s}"));
+            report.error_field(
+                field,
+                format!("{field} must be https:// in export, got {s}"),
+            );
         } else if lower.starts_with("http://127.0.0.1:") || lower.starts_with("http://localhost:") {
             // Preview loopback is allowed outside export; still not a local file.
         } else {
-            report
-                .errors
-                .push(format!("{field} uses insecure http:// URL: {s}"));
+            report.error_field(field, format!("{field} uses insecure http:// URL: {s}"));
         }
         return;
     }
@@ -1018,14 +1139,15 @@ fn check_image_src(
     if opts.export {
         let base = opts.base_url.trim();
         if !base.starts_with("https://") {
-            report.errors.push(format!(
-                "{field} is relative and requires an https:// base_url in export"
-            ));
+            report.error_field(
+                field,
+                format!("{field} is relative and requires an https:// base_url in export"),
+            );
         }
     }
     if let Some(root) = root {
         if !local_image_exists(root, s) {
-            report.errors.push(format!("Missing local image: {s}"));
+            report.error_field(field, format!("Missing local image: {s}"));
         }
     }
 }
@@ -1096,6 +1218,13 @@ mod tests {
         t.name.clear();
         let r = validate_template(&t);
         assert!(report_has(&r, "name is empty"));
+        let issue = r
+            .errors
+            .iter()
+            .find(|e| e.message.contains("name is empty"))
+            .expect("name issue");
+        assert_eq!(issue.loc, Some(ValidateLoc::Head));
+        assert_eq!(issue.field.as_deref(), Some("name"));
     }
 
     #[test]
@@ -1139,6 +1268,21 @@ mod tests {
         }));
         let r = validate_template(&t);
         assert!(report_has(&r, "mj-navbar-link.href is empty"));
+        let issue = r
+            .errors
+            .iter()
+            .find(|e| e.message.contains("mj-navbar-link.href is empty"))
+            .expect("navbar href issue");
+        assert_eq!(
+            issue.loc,
+            Some(ValidateLoc::Node(vec![
+                NodeStep::BodyNode(0),
+                NodeStep::SectionChild(0),
+                NodeStep::ColComp(0),
+                NodeStep::NavbarLink(0),
+            ]))
+        );
+        assert_eq!(issue.field.as_deref(), Some("href"));
     }
 
     #[test]

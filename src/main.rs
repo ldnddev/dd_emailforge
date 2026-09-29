@@ -23,11 +23,16 @@ use validate::validate_template_with_root;
 #[command(
     name = "dd_emailforge",
     version = env!("CARGO_PKG_VERSION"),
-    about = "Terminal-UI email template builder"
+    about = "Email template builder for the terminal. Pass a path, or open empty and press n/o.",
+    override_usage = "dd_emailforge [PATH]\n       dd_emailforge <COMMAND>",
+    args_conflicts_with_subcommands = true
 )]
 struct Cli {
+    /// Template.json or a folder containing one.
+    #[arg(value_name = "PATH")]
+    path: Option<PathBuf>,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -39,7 +44,8 @@ enum Command {
         #[arg(long, value_enum, default_value_t = StarterKind::Welcome)]
         from: StarterKind,
     },
-    /// Open the TUI on a template.json or a folder containing one.
+    /// Hidden alias: the app is `dd_emailforge [PATH]`.
+    #[command(hide = true)]
     Tui { path: Option<PathBuf> },
     /// Structural + image validation. Non-zero exit on errors. Warnings on stderr.
     Validate { path: PathBuf },
@@ -63,18 +69,23 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
-        Command::Init { dir, from } => cmd_init(&dir, from),
-        Command::Tui { path } => match tui::run_tui(path) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("{e:#}");
-                ExitCode::from(1)
-            }
-        },
-        Command::Validate { path } => cmd_validate(&path),
-        Command::Show { path } => cmd_show(&path),
-        Command::Export { path, out } => cmd_export(&path, out.as_deref()),
-        Command::Preview { path, port } => cmd_preview(&path, port),
+        None => cmd_tui(cli.path),
+        Some(Command::Init { dir, from }) => cmd_init(&dir, from),
+        Some(Command::Tui { path }) => cmd_tui(path),
+        Some(Command::Validate { path }) => cmd_validate(&path),
+        Some(Command::Show { path }) => cmd_show(&path),
+        Some(Command::Export { path, out }) => cmd_export(&path, out.as_deref()),
+        Some(Command::Preview { path, port }) => cmd_preview(&path, port),
+    }
+}
+
+fn cmd_tui(path: Option<PathBuf>) -> ExitCode {
+    match tui::run_tui(path) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{e:#}");
+            ExitCode::from(1)
+        }
     }
 }
 
@@ -319,6 +330,68 @@ fn tui_open(url: &str) -> std::io::Result<()> {
         .stderr(Stdio::null())
         .spawn()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bare_invocation_is_tui() {
+        let cli = Cli::try_parse_from(["dd_emailforge"]).unwrap();
+        assert!(cli.command.is_none());
+        assert!(cli.path.is_none());
+    }
+
+    #[test]
+    fn path_without_subcommand_is_tui() {
+        let cli = Cli::try_parse_from(["dd_emailforge", "./my-email"]).unwrap();
+        assert!(cli.command.is_none());
+        assert_eq!(
+            cli.path.as_deref(),
+            Some(std::path::Path::new("./my-email"))
+        );
+    }
+
+    #[test]
+    fn hidden_tui_alias_still_parses() {
+        let cli = Cli::try_parse_from(["dd_emailforge", "tui", "./my-email"]).unwrap();
+        match cli.command {
+            Some(Command::Tui { path }) => {
+                assert_eq!(path.as_deref(), Some(std::path::Path::new("./my-email")));
+            }
+            other => panic!("expected Tui, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn help_presents_the_app_not_a_tui_subcommand() {
+        use clap::CommandFactory;
+        let help = Cli::command().render_help().to_string();
+        assert!(
+            help.contains("[PATH]"),
+            "usage should be dd_emailforge [PATH], got:\n{help}"
+        );
+        let after_commands = help.split("Commands:").nth(1).unwrap_or("");
+        assert!(
+            !after_commands
+                .lines()
+                .any(|l| l.split_whitespace().next() == Some("tui")),
+            "tui must stay hidden from --help:\n{help}"
+        );
+    }
+
+    #[test]
+    fn init_subcommand_still_works() {
+        let cli = Cli::try_parse_from(["dd_emailforge", "init", "./tmpl"]).unwrap();
+        match cli.command {
+            Some(Command::Init { dir, from }) => {
+                assert_eq!(dir, PathBuf::from("./tmpl"));
+                assert_eq!(from, StarterKind::Welcome);
+            }
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
 }
 
 fn load_cli(path: &std::path::Path) -> Result<crate::model::Template, ExitCode> {

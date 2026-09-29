@@ -189,7 +189,7 @@
       <h2 id="install">Install</h2>
       <p>Download the package that matches this machine (Linux or macOS, x86_64 or aarch64):</p>
       <pre>curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash</pre>
-      <p>That installs <code>$HOME/.local/bin/dd_emailforge</code>, writes the default theme to <code>~/.config/ldnddev/dd_emailforge_theme.yml</code> (only if none exists), and creates <code>~/.config/ldnddev/dd_emailforge/templates/</code>. Pin a release with <code>VERSION=v0.8.0</code>.</p>
+      <p>That installs <code>$HOME/.local/bin/dd_emailforge</code>, writes the default theme to <code>~/.config/ldnddev/dd_emailforge_theme.yml</code> (only if none exists), and creates <code>~/.config/ldnddev/dd_emailforge/templates/</code>. Pin a release with <code>VERSION=v0.9.0</code>.</p>
       <p>From a clone of this repo (builds with cargo):</p>
       <pre>./install.sh
 ./install.sh --from-release   # GitHub package even from a clone</pre>
@@ -206,7 +206,7 @@
       <pre>dd_emailforge init ./my-email --from welcome
 # skip npm install when `mjml` is already on PATH
 cd my-email && npm install
-dd_emailforge tui .</pre>
+dd_emailforge .</pre>
       <p>A directory argument means <code>dir/template.json</code>. <code>init</code> writes:</p>
       <ul>
         <li><code>template.json</code> — the document</li>
@@ -228,10 +228,10 @@ dd_emailforge tui .</pre>
       <p class="muted">Welcome ships Google Font Raleway. Starter images are <code>https://dummyimage.com/…</code> placeholders.</p>
 
       <h2 id="tui">Open the TUI</h2>
-      <p><code>dd_emailforge tui</code> with no path still launches chrome. You’ll get an info toast until a template exists:</p>
+      <p>Bare <code>dd_emailforge</code> (or a path) opens the TUI. You’ll get an info toast until a template exists; <kbd>n</kbd> New and <kbd>o</kbd> Open work in the editor:</p>
       <figure>
         <img src="images/tui-empty.png" alt="Empty TUI: Structure shows HEAD, BRAND, BODY; a toast says run init">
-        <figcaption>No template open. Run <code>dd_emailforge init &lt;dir&gt;</code>, then <code>tui</code> on that folder.</figcaption>
+        <figcaption>No template open. <kbd>n</kbd> creates a starter folder; <kbd>o</kbd> opens <code>template.json</code> or a folder.</figcaption>
       </figure>
       <p>After <code>init --from welcome</code>:</p>
       <figure>
@@ -271,7 +271,7 @@ dd_emailforge tui .</pre>
         <img src="images/tui-selected.png" alt="mj-text selected in the structure tree and highlighted in the details blueprint">
         <figcaption>A selected <code>mj-text</code> is highlighted in Structure and in the blueprint. Click the other column’s text to hop there without walking the tree.</figcaption>
       </figure>
-      <p>Other tree edits: <kbd>d</kbd> delete (not HEAD/BRAND/BODY), <kbd>y</kbd> duplicate, <kbd>u</kbd> undo (cap 20), <kbd>J</kbd>/<kbd>K</kbd> reorder, <kbd>C</kbd>/<kbd>V</kbd> add/remove a column (equal-% widths), <kbd>c</kbd>/<kbd>v</kbd> hop columns.</p>
+      <p>Other tree edits: <kbd>d</kbd> delete (not HEAD/BRAND/BODY), <kbd>y</kbd> duplicate, <kbd>u</kbd> undo (cap 20), <kbd>U</kbd> / <kbd>Ctrl+R</kbd> redo, <kbd>J</kbd>/<kbd>K</kbd> reorder, <kbd>C</kbd>/<kbd>V</kbd> add/remove a column (equal-% widths), <kbd>c</kbd>/<kbd>v</kbd> hop columns.</p>
       <p>Autosave rewrites <code>template.json</code> 2s after a change when a path is set. Manual <kbd>s</kbd> also writes <code>template.json.backup</code>.</p>
 
       <h2 id="ship">Validate, preview, export</h2>
@@ -304,7 +304,9 @@ dd_emailforge preview ./my-email --port 8766</pre>
         <tbody>
           <tr><td><kbd>F1</kbd></td><td>Help</td></tr>
           <tr><td><kbd>F2</kbd></td><td>Theme source + sampled tokens</td></tr>
-          <tr><td><kbd>F3</kbd></td><td>Validate</td></tr>
+          <tr><td><kbd>F3</kbd></td><td>Validate (Enter jumps to the node/field)</td></tr>
+          <tr><td><kbd>n</kbd></td><td>New template</td></tr>
+          <tr><td><kbd>o</kbd></td><td>Open template.json or folder</td></tr>
           <tr><td><kbd>p</kbd></td><td>Preview</td></tr>
           <tr><td><kbd>Shift+E</kbd></td><td>Export</td></tr>
           <tr><td><kbd>s</kbd></td><td>Save JSON + <code>.backup</code></td></tr>
@@ -312,7 +314,7 @@ dd_emailforge preview ./my-email --port 8766</pre>
           <tr><td><kbd>Enter</kbd></td><td>FormEdit</td></tr>
           <tr><td><kbd>Ctrl+Q</kbd></td><td>Quit (confirm if unsaved)</td></tr>
           <tr><td><kbd>j</kbd>/<kbd>k</kbd> <kbd>g</kbd>/<kbd>G</kbd> <kbd>h</kbd>/<kbd>l</kbd> <kbd>Space</kbd></td><td>Tree move / jump / fold</td></tr>
-          <tr><td><kbd>d</kbd> <kbd>y</kbd> <kbd>u</kbd> <kbd>J</kbd>/<kbd>K</kbd></td><td>Delete / duplicate / undo / reorder</td></tr>
+          <tr><td><kbd>d</kbd> <kbd>y</kbd> <kbd>u</kbd> <kbd>U</kbd> <kbd>J</kbd>/<kbd>K</kbd></td><td>Delete / duplicate / undo / redo / reorder</td></tr>
           <tr><td><kbd>C</kbd>/<kbd>V</kbd> <kbd>c</kbd>/<kbd>v</kbd></td><td>Add/remove column · prev/next column</td></tr>
           <tr><td><kbd>Ctrl+P</kbd></td><td>Image picker on src fields</td></tr>
         </tbody>

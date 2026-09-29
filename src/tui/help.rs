@@ -110,7 +110,9 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         &[
             ("F1", "Open/close this help"),
             ("F2", "Open/close theme source + sampled tokens"),
-            ("F3", "Validate the open template"),
+            ("F3", "Validate; Enter on an error jumps to the node/field"),
+            ("n", "New template (starter + folder)"),
+            ("o", "Open template.json or a folder"),
             ("p", "Preview in browser (mjml -w + loopback wrapper)"),
             (
                 "Shift+E",
@@ -157,6 +159,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ("d", "Delete (not HEAD/BRAND/BODY)"),
             ("y", "Duplicate after"),
             ("u", "Undo (cap 20)"),
+            ("U / Ctrl+R", "Redo"),
             ("J / K", "Reorder sibling down / up"),
             ("C / V", "Add / remove column"),
             ("c / v", "Prev / next column"),
@@ -188,6 +191,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ("Ctrl+P", "Image picker on src / background_url fields"),
             ("Ctrl+E", "Expand focused textarea to a full-size editor"),
             ("Esc", "Close expanded textarea, or cancel edit"),
+            ("Paste", "Insert clipboard text (newlines only in textarea)"),
             ("Click field", "Focus that input"),
             ("Click textarea", "Place the cursor"),
         ],
@@ -217,7 +221,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
 
     lines.push(Line::from(Span::styled("Notes", h_style)));
     lines.push(Line::from(""));
-    let note = "Autosave rewrites template.json 2s after a change when a path is set. Manual s also writes template.json.backup. JSON-LD and CSS may be invalid while typing; F3 / export / preview require them to parse. Insert picker lists only kinds legal for the current selection. Image picker is rooted at images/ and cannot walk above the template folder. Padding is 1-4 values with px or % (e.g. 10px or 10px 20px); bare numbers are saved as px. Components that take a CSS border also have Border sides checkboxes (All / Top / Right / Bottom / Left); All is the default and omitted from JSON. Empty color, font-family, and button color fields inherit brand; FormEdit shows the live brand value as a placeholder.";
+    let note = "Bare dd_emailforge (or a path) opens the TUI. n creates a starter folder; o opens template.json or a folder. Autosave rewrites template.json 2s after a change when a path is set. Manual s also writes template.json.backup. JSON-LD and CSS may be invalid while typing; F3 / export / preview require them to parse. Enter on an F3 error jumps to that node and focuses the field. Insert picker lists only kinds legal for the current selection. Image picker is rooted at images/ and cannot walk above the template folder. Padding is 1-4 values with px or % (e.g. 10px or 10px 20px); bare numbers are saved as px. Components that take a CSS border also have Border sides checkboxes (All / Top / Right / Bottom / Left); All is the default and omitted from JSON. Empty color, font-family, and button color fields inherit brand; FormEdit shows the live brand value as a placeholder.";
     for chunk in wrap_to_lines(note, width.saturating_sub(2)) {
         lines.push(Line::from(Span::raw(format!("  {}", chunk))));
     }

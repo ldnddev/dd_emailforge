@@ -43,7 +43,7 @@ Pain points this app removes:
 
 ### Goals (v1)
 
-- Single binary, clap CLI: `init` / `tui` / `validate` / `export` / `preview` / `show`.
+- Single binary: `dd_emailforge [PATH]` is the editor. Optional clap tools: `init` / `validate` / `export` / `preview` / `show`.
 - One folder per template; `template.json` is the only document the TUI reads/writes.
 - Typed serde JSON (`version: 1`); unknown versions are refused, not migrated.
 - Rust emitter produces self-contained MJML 5 (no `mj-include`).
@@ -132,7 +132,7 @@ MJML import; sample-data overlay; ESP export profiles; send test; `mj-include`; 
 
 20. **Social `x` emits MJML `name="twitter"` unless MJML 5.4 registers `x`.** Confirm at PR 3 against the installed compiler; one snapshot covers the mapping. `SocialNetwork::X` still serializes as JSON `"x"`.
 
-21. **`dd_emailforge tui` with no path stays a valid empty-shell launch** after PR 2 (info toast, `template: None`). A path is not required.
+21. **`dd_emailforge` with no path stays a valid empty-shell launch** after PR 2 (info toast, `template: None`). A path is not required.
 
 22. **Starters keep dummyimage.com `https://` URLs.** Document that production templates should use `images/` + `base_url`. Init-without-network still validates.
 
@@ -269,8 +269,8 @@ No `handlebars`, no `rust-embed` in v1 (starters are `include_str!` in `starters
 ### CLI
 
 ```text
+dd_emailforge [template.json|dir]
 dd_emailforge init <dir> [--from welcome|newsletter|promo|transactional]
-dd_emailforge tui <template.json|dir>
 dd_emailforge validate <template.json|dir>
 dd_emailforge export <template.json|dir> [--out dir]
 dd_emailforge preview <template.json|dir> [--port 8766]
@@ -281,10 +281,12 @@ Clap sketch (`src/main.rs`):
 
 ```rust
 #[derive(Parser)]
-#[command(name = "dd_emailforge", version, about = "Terminal-UI email template builder")]
+#[command(name = "dd_emailforge", version, about = "Email template builder for the terminal")]
 struct Cli {
+    /// Template.json or a folder containing one.
+    path: Option<PathBuf>,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -296,8 +298,6 @@ enum Command {
         #[arg(long, value_enum, default_value_t = StarterKind::Welcome)]
         from: StarterKind,
     },
-    /// Open the TUI on a template.json or a folder containing one.
-    Tui { path: Option<PathBuf> },
     /// Structural + image validation. Non-zero exit on errors. Warnings on stderr.
     Validate { path: PathBuf },
     /// Validate, emit MJML, compile HTML with official mjml.
@@ -320,7 +320,7 @@ enum Command {
 
 **Path rule:** a directory argument means `dir/template.json`. A file argument is used as-is. Implemented in `storage::resolve_template_path`. Missing file → anyhow error, no TUI.
 
-**`tui` without a path (PR 1):** launch the empty shell with no document. From PR 2 on, no-path TUI still launches chrome and shows an info toast `"No template open. Run: dd_emailforge init <dir>"`; Save (`s`) prompts for a path like siteforge's `SavePrompt`. Prefer `dd_emailforge tui <dir>` in docs.
+**The binary is the editor.** `dd_emailforge` and `dd_emailforge <path>` launch it. Empty-shell toast is `"No template open. n: New   o: Open"`. `n` / `o` confirm if dirty, then prompt. Save (`s`) still prompts for a path when none is set.
 
 **`init` does not run `npm install`.** It writes `package.json` and prints `cd <dir> && npm install`. Network installs are the user's call. Missing `mjml` later is a blocking modal, not a surprise download.
 
@@ -424,15 +424,17 @@ Full-screen `Block` with `app_shell` is painted first, identical to `dd_siteforg
 
 ### TUI loop
 
-Copy `dd_siteforge/src/tui/mod.rs` `App::run`:
+Idle loop in `src/tui/mod.rs` `App::run`:
 
 ```
 loop:
-  tick_autosave(now)              # write template.json if dirty + 2s elapsed
-  terminal.draw(|f| self.draw(f)) # header + body + footer + modals + toasts
-  if event::poll(100ms):
-    handle_event(evt)
-    mark_dirty_if_changed()       # JSON snapshot vs last_saved_json
+  tick_autosave / drain_watch_errors / drain_export / prune toasts
+  draw only if the frame changed
+  poll until next wake (toast TTL, autosave 2s, export job) or input
+  drain pending events
+  handle_event returns whether the frame changed
+    (skip KeyEventKind::Release, mouse Moved/Drag/Up, focus; Resize redraws)
+  mark_dirty_if_changed only after a changing event
 ```
 
 Dirty detection serializes `self.template` with `serde_json::to_string` (compact, not pretty) and compares to `last_saved_json`. Autosave uses `storage::save_template` (pretty, atomic). Manual `s` calls `commit_save_with_backup`: write JSON + byte-identical `template.json.backup`. On load, if backup exists and differs, Info toast (siteforge wording).

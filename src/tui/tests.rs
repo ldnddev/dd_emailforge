@@ -1,12 +1,22 @@
 use super::*;
 use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 fn send_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
     app.handle_event(Event::Key(KeyEvent::new(code, modifiers)))
+        .expect("key event should be handled");
+}
+
+fn send_paste(app: &mut App, text: &str) {
+    app.handle_event(Event::Paste(text.to_string()))
+        .expect("paste event should be handled");
+}
+
+fn send_key_kind(app: &mut App, code: KeyCode, modifiers: KeyModifiers, kind: KeyEventKind) {
+    app.handle_event(Event::Key(KeyEvent::new_with_kind(code, modifiers, kind)))
         .expect("key event should be handled");
 }
 
@@ -184,6 +194,231 @@ fn shift_e_without_template_toasts_warning() {
         app.toasts
             .iter()
             .any(|t| t.message.contains("No template open"))
+    );
+}
+
+#[test]
+fn key_release_does_not_toggle_help() {
+    let mut app = chrome_app();
+    send_key_kind(
+        &mut app,
+        KeyCode::F(1),
+        KeyModifiers::NONE,
+        KeyEventKind::Release,
+    );
+    assert!(!app.show_help);
+    send_key_kind(
+        &mut app,
+        KeyCode::F(1),
+        KeyModifiers::NONE,
+        KeyEventKind::Press,
+    );
+    assert!(app.show_help);
+    send_key_kind(
+        &mut app,
+        KeyCode::F(1),
+        KeyModifiers::NONE,
+        KeyEventKind::Release,
+    );
+    assert!(app.show_help);
+}
+
+#[test]
+fn key_repeat_moves_tree_selection() {
+    let mut app = app_with_template();
+    assert_eq!(app.selected_row, 0);
+    send_key_kind(
+        &mut app,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+        KeyEventKind::Repeat,
+    );
+    assert_eq!(app.selected_row, 1);
+    send_key_kind(
+        &mut app,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+        KeyEventKind::Release,
+    );
+    assert_eq!(app.selected_row, 1);
+}
+
+fn reports_change(app: &mut App, evt: Event) -> bool {
+    app.handle_event(evt).expect("handle_event")
+}
+
+fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> Event {
+    Event::Mouse(MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    })
+}
+
+#[test]
+fn idle_inputs_do_not_request_redraw() {
+    let mut app = app_with_template();
+    assert!(!reports_change(&mut app, Event::FocusGained));
+    assert!(!reports_change(&mut app, Event::FocusLost));
+    assert!(!reports_change(
+        &mut app,
+        Event::Key(KeyEvent::new_with_kind(
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        )),
+    ));
+    assert!(!reports_change(
+        &mut app,
+        mouse_at(MouseEventKind::Moved, 5, 5),
+    ));
+    assert!(!reports_change(
+        &mut app,
+        mouse_at(MouseEventKind::Up(MouseButton::Left), 5, 5),
+    ));
+    assert!(!reports_change(
+        &mut app,
+        mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 5),
+    ));
+}
+
+#[test]
+fn resize_and_tree_nav_request_redraw() {
+    let mut app = app_with_template();
+    assert!(reports_change(&mut app, Event::Resize(80, 24)));
+    assert!(reports_change(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)),
+    ));
+    assert_eq!(app.selected_row, 1);
+}
+
+#[test]
+fn unhandled_keys_and_bound_nav_skip_redraw() {
+    let mut app = app_with_template();
+    assert!(!reports_change(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+    ));
+    assert_eq!(app.selected_row, 0);
+    assert!(!reports_change(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE)),
+    ));
+    app.tree_end();
+    let last = app.selected_row;
+    assert!(!reports_change(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)),
+    ));
+    assert_eq!(app.selected_row, last);
+}
+
+#[test]
+fn help_scroll_at_bound_and_unhandled_key_skip_redraw() {
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+    assert!(app.show_help);
+    assert_eq!(app.help_scroll, 0);
+    assert!(!reports_change(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE)),
+    ));
+    assert!(!reports_change(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+    ));
+    assert!(app.show_help);
+}
+
+#[test]
+fn mouse_moved_with_modal_open_skips_redraw() {
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
+    assert!(app.modal.is_some());
+    assert!(!reports_change(
+        &mut app,
+        mouse_at(MouseEventKind::Moved, 10, 10),
+    ));
+    assert!(!reports_change(
+        &mut app,
+        mouse_at(MouseEventKind::ScrollDown, 10, 10),
+    ));
+}
+
+#[test]
+fn next_wake_idle_is_none() {
+    let app = chrome_app();
+    assert!(app.next_wake(std::time::Instant::now()).is_none());
+}
+
+#[test]
+fn next_wake_tracks_toasts_and_export() {
+    let mut app = chrome_app();
+    app.push_toast(ToastLevel::Info, "hi");
+    let toast_wake = app
+        .next_wake(std::time::Instant::now())
+        .expect("toast should schedule a wake");
+    assert!(toast_wake <= super::TOAST_TTL);
+    assert!(toast_wake > std::time::Duration::from_secs(0));
+
+    let (_tx, rx) = std::sync::mpsc::channel();
+    app.export_rx = Some(rx);
+    let wake = app
+        .next_wake(std::time::Instant::now())
+        .expect("export job should schedule a wake");
+    assert!(wake <= std::time::Duration::from_millis(50));
+}
+
+#[test]
+fn drain_export_applies_success() {
+    let mut app = chrome_app();
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.export_rx = Some(rx);
+    tx.send(super::export::ExportJobResult::Ok {
+        html_path: std::path::PathBuf::from("template.html"),
+        html_bytes: 12,
+    })
+    .unwrap();
+    assert!(app.drain_export());
+    assert!(app.export_rx.is_none());
+    assert!(
+        app.toasts
+            .iter()
+            .any(|t| t.message.contains("Exported template.html"))
+    );
+}
+
+#[test]
+fn drain_export_opens_compile_error_modal() {
+    let mut app = chrome_app();
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.export_rx = Some(rx);
+    tx.send(super::export::ExportJobResult::Err(
+        crate::mjml::MjmlError::Compile {
+            stderr: "boom".into(),
+        },
+    ))
+    .unwrap();
+    assert!(app.drain_export());
+    match &app.modal {
+        Some(Modal::MjmlCompileError { stderr, .. }) => assert!(stderr.contains("boom")),
+        other => panic!("expected MjmlCompileError, got {other:?}"),
+    }
+}
+
+#[test]
+fn export_already_running_toasts() {
+    let mut app = app_with_template();
+    app.path = Some(std::path::PathBuf::from("template.json"));
+    let (_tx, rx) = std::sync::mpsc::channel();
+    app.export_rx = Some(rx);
+    send_key(&mut app, KeyCode::Char('E'), KeyModifiers::SHIFT);
+    assert!(
+        app.toasts
+            .iter()
+            .any(|t| t.message.contains("Export already running"))
     );
 }
 
@@ -1201,7 +1436,7 @@ fn textarea_expand_ctrl_e_opens_and_esc_returns_to_form() {
 fn textarea_expand_ctrl_e_on_non_textarea_is_noop() {
     let mut app = app_with_template();
     send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-    assert_eq!(form_state(&app).form.fields[0].id, "subject");
+    assert_eq!(form_state(&app).form.fields[0].id, "name");
     send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
     assert!(!app.form_textarea_expanded);
     assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
@@ -1376,4 +1611,164 @@ fn f1_from_expanded_textarea_keeps_form() {
     assert!(!app.show_help);
     assert!(app.form_textarea_expanded);
     assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+}
+
+fn unique_temp(prefix: &str) -> std::path::PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("ef-{prefix}-{}-{nanos}", std::process::id()))
+}
+
+#[test]
+fn n_opens_new_prompt() {
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
+    match &app.modal {
+        Some(Modal::NewPrompt { path, starter }) => {
+            assert_eq!(path, "./welcome");
+            assert_eq!(*starter, crate::starters::StarterKind::Welcome);
+        }
+        other => panic!("expected NewPrompt, got {other:?}"),
+    }
+}
+
+#[test]
+fn new_prompt_tab_cycles_starter() {
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+    match &app.modal {
+        Some(Modal::NewPrompt { path, starter }) => {
+            assert_eq!(*starter, crate::starters::StarterKind::Newsletter);
+            assert_eq!(path, "./newsletter");
+        }
+        other => panic!("expected NewPrompt, got {other:?}"),
+    }
+}
+
+#[test]
+fn n_creates_and_adopts_starter() {
+    let dir = unique_temp("new");
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
+    for _ in 0..20 {
+        send_key(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+    }
+    send_paste(&mut app, &dir.display().to_string());
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(app.template.is_some(), "template should be adopted");
+    assert_eq!(
+        app.path.as_ref().map(|p| p.parent().unwrap()),
+        Some(dir.as_path())
+    );
+    assert!(!app.dirty);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn dirty_n_confirms_before_new_prompt() {
+    let mut app = app_with_template();
+    app.dirty = true;
+    send_key(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
+    match &app.modal {
+        Some(Modal::ConfirmPrompt {
+            on_confirm: ConfirmKind::NewUnsaved,
+            ..
+        }) => {}
+        other => panic!("expected NewUnsaved confirm, got {other:?}"),
+    }
+    send_key(&mut app, KeyCode::Char('y'), KeyModifiers::NONE);
+    assert!(matches!(app.modal, Some(Modal::NewPrompt { .. })));
+    assert!(app.dirty);
+}
+
+#[test]
+fn o_opens_existing_template() {
+    let dir = unique_temp("open");
+    let json = crate::starters::init_template_dir(&dir, crate::starters::StarterKind::Promo)
+        .expect("init");
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::Char('o'), KeyModifiers::NONE);
+    send_paste(&mut app, &json.display().to_string());
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(app.template.is_some());
+    assert_eq!(app.path.as_ref(), Some(&json));
+    let slug = crate::starters::folder_slug(&dir);
+    assert_eq!(
+        app.template.as_ref().map(|t| t.name.as_str()),
+        Some(slug.as_str())
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn paste_into_formedit_one_line_field() {
+    let mut app = app_with_template();
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    send_paste(&mut app, "pasted\nsecond-line");
+    match &app.modal {
+        Some(Modal::FormEdit { state, .. }) => {
+            assert_eq!(state.get("name"), "welcomepasted");
+        }
+        other => panic!("expected FormEdit, got {other:?}"),
+    }
+}
+
+#[test]
+fn undo_then_redo_restores_insert() {
+    let mut app = app_with_one_column();
+    let col = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-column"))
+        .expect("column");
+    app.selected_row = col;
+    let before = app.template.clone();
+    app.insert_kind(super::component_kind::ComponentKind::MjText);
+    let after = app.template.clone();
+    assert_ne!(before, after);
+    send_key(&mut app, KeyCode::Char('u'), KeyModifiers::NONE);
+    assert_eq!(app.template, before);
+    send_key(&mut app, KeyCode::Char('U'), KeyModifiers::NONE);
+    assert_eq!(app.template, after);
+}
+
+#[test]
+fn ctrl_r_redoes() {
+    let mut app = app_with_one_column();
+    let col = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-column"))
+        .expect("column");
+    app.selected_row = col;
+    let before = app.template.clone();
+    app.insert_kind(super::component_kind::ComponentKind::MjText);
+    send_key(&mut app, KeyCode::Char('u'), KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Char('r'), KeyModifiers::CONTROL);
+    assert_ne!(app.template, before);
+}
+
+#[test]
+fn f3_enter_jumps_to_head_name() {
+    let mut t = crate::model::Template::minimal();
+    t.name.clear();
+    let mut app = App::new(
+        AppTheme::default(),
+        "default".to_string(),
+        None,
+        Some(t),
+        None,
+    );
+    send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    match &app.modal {
+        Some(Modal::FormEdit { cursor, state, .. }) => {
+            assert!(matches!(cursor, super::tree::TreeId::Head));
+            assert_eq!(state.form.fields[state.focused_field].id, "name");
+        }
+        other => panic!("expected FormEdit on Head name, got {other:?}"),
+    }
 }

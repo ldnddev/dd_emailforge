@@ -35,10 +35,7 @@ fn capture_tutorial_frames() {
 
 fn empty_app() -> App {
     let mut app = shot_app(None);
-    app.push_toast(
-        ToastLevel::Info,
-        "No template open. Run: dd_emailforge init <dir>",
-    );
+    app.push_toast(ToastLevel::Info, super::EMPTY_TEMPLATE_HINT);
     app
 }
 

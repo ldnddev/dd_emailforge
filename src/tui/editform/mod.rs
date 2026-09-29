@@ -278,9 +278,15 @@ impl EditFormState {
         self.toggle_focused_checkbox();
     }
 
-    #[cfg(test)]
     pub fn field_index(&self, id: &str) -> Option<usize> {
         self.form.fields.iter().position(|f| f.id == id)
+    }
+
+    pub fn focus_id(&mut self, id: &str) {
+        if let Some(i) = self.field_index(id) {
+            self.focused_field = i;
+            self.checkbox_cursor = 0;
+        }
     }
 }
 

@@ -23,7 +23,7 @@ Workflow:
 
 1. `init <dir> [--from welcome|newsletter|promo|transactional]`
 2. `cd <dir> && npm install` if `mjml` is not already on PATH (official `mjml ^5.4.0`, Node 20+)
-3. `tui <dir>` — Structure tree + Details + FormEdit
+3. `dd_emailforge <dir>` — Structure tree + Details + FormEdit
 4. `p` preview (loopback wrapper, 600px + 320px)
 5. `export` writes `template.mjml` + `template.html` next to the JSON
 
@@ -36,15 +36,15 @@ Current crate version: see `Cargo.toml`. JSON `version` is `1` and independent o
 ### CLI
 
 ```
+dd_emailforge [template.json|dir]
 dd_emailforge init <dir> [--from welcome|newsletter|promo|transactional]
-dd_emailforge tui [template.json|dir]
 dd_emailforge validate <template.json|dir>
 dd_emailforge export <template.json|dir> [--out dir]
 dd_emailforge preview <template.json|dir> [--port 8766]
 dd_emailforge show <template.json>
 ```
 
-A directory argument means `dir/template.json`. `init` does **not** run `npm install`; it prints the hint. CLI `preview` binds port **8766** by default; TUI preview binds `127.0.0.1:0`.
+The binary is the editor: `dd_emailforge` or `dd_emailforge <path>`. A directory argument means `dir/template.json`. `init` does **not** run `npm install`; it prints the hint. CLI `preview` binds port **8766** by default; TUI preview binds `127.0.0.1:0`.
 
 ### Content model
 
@@ -60,9 +60,9 @@ Fixed 3-line header + master/detail body + 1-line adaptive footer per the visual
 
 Toasts: `success` / `info` / `warning` / `error`. Modals for blocking errors (load, missing mjml, strict compile fail, validation list, FormEdit, pickers).
 
-F1 Help. F2 Theme. F3 Validate. `Shift+E` Export. `p` Preview. `s` Save. `/` insert (filtered to legal kinds). `Ctrl+Q` quit (confirm if dirty). Bare `q` never quits.
+F1 Help. F2 Theme. F3 Validate (Enter on an error jumps to the node/field). `n` New. `o` Open. `Shift+E` Export. `p` Preview. `s` Save. `/` insert (filtered to legal kinds). `u` undo / `U` or `Ctrl+R` redo. `Ctrl+Q` quit (confirm if dirty). Bare `q` never quits. Bracketed paste inserts into FormEdit, path prompts, and pickers.
 
-FormEdit: Tab / enum cycle / Ctrl+S / Esc / click-to-focus / Ctrl+P image picker. Padding fields show the MJML rule (1-4 values with `px` or `%`, e.g. `10px` or `10px 20px`); empty inputs show that example as a placeholder. Bare numbers are saved and emitted as `px`. Invalid units (`em`, five values, …) fail FormEdit save and F3. P0 chrome on primitives: `border` / `border_radius` (section, column, wrapper, image, button, hero, social, carousel, table), typography (`font_weight` / `font_style` / `line_height`), button `inner_padding`, divider `border_style`/`width`/`align`. P1 layout: section `gutter` + background-url/size/repeat/direction, wrapper background-url/size/repeat/`gap`, column/group/hero `vertical_align`, group `direction`, hero `background_width`/`background_position`, button `target`/`height`, image `title`, social icon/inner padding + font-size/color, document `dir`. P2 completeness: `css_class` on body + primitives, extra type/link attrs, navbar hamburger `ico-*`, accordion icons, carousel thumbnail radius, extra social networks, table cellpadding/cellspacing/role. Empty optional attrs are omitted; brand `mj-attributes` stay the fallback. Tree: `j/k` `g/G` `h/l` Space, `d` `y` `u`, `J/K`, `C/V` `c/v`. Details shows a full-email ascii blueprint of every layout node, filled with each node's resolved email colors (inherit brand → body → ancestors); the selected element is chrome-highlighted (`text_active_focus` on glyphs, fill stays); click a region to select it in the Structure tree.
+FormEdit: Tab / enum cycle / Ctrl+S / Esc / click-to-focus / Ctrl+P image picker. Padding fields show the MJML rule (1-4 values with `px` or `%`, e.g. `10px` or `10px 20px`); empty inputs show that example as a placeholder. Bare numbers are saved and emitted as `px`. Invalid units (`em`, five values, …) fail FormEdit save and F3. P0 chrome on primitives: `border` / `border_radius` (section, column, wrapper, image, button, hero, social, carousel, table), typography (`font_weight` / `font_style` / `line_height`), button `inner_padding`, divider `border_style`/`width`/`align`. P1 layout: section `gutter` + background-url/size/repeat/direction, wrapper background-url/size/repeat/`gap`, column/group/hero `vertical_align`, group `direction`, hero `background_width`/`background_position`, button `target`/`height`, image `title`, social icon/inner padding + font-size/color, document `dir`. P2 completeness: `css_class` on body + primitives, extra type/link attrs, navbar hamburger `ico-*`, accordion icons, carousel thumbnail radius, extra social networks, table cellpadding/cellspacing/role. Empty optional attrs are omitted; brand `mj-attributes` stay the fallback. Tree: `j/k` `g/G` `h/l` Space, `d` `y` `u` `U`, `J/K`, `C/V` `c/v`. Details shows a full-email ascii blueprint of every layout node, filled with each node's resolved email colors (inherit brand → body → ancestors); the selected element is chrome-highlighted (`text_active_focus` on glyphs, fill stays); click a region to select it in the Structure tree.
 
 ### Starters
 

@@ -295,6 +295,24 @@ pub(super) fn insert_char(value: &str, cursor_pos: usize, ch: char) -> (String, 
     (chars.into_iter().collect(), pos + 1)
 }
 
+pub(super) fn insert_str(value: &str, cursor_pos: usize, insert: &str) -> (String, usize) {
+    let mut chars: Vec<char> = value.chars().collect();
+    let pos = cursor_pos.min(chars.len());
+    let insert_chars: Vec<char> = insert.chars().collect();
+    let n = insert_chars.len();
+    chars.splice(pos..pos, insert_chars);
+    (chars.into_iter().collect(), pos + n)
+}
+
+pub(super) fn sanitize_paste(text: &str, keep_newlines: bool) -> String {
+    let t = text.replace('\r', "");
+    if keep_newlines {
+        t
+    } else {
+        t.lines().next().unwrap_or("").to_string()
+    }
+}
+
 pub(super) fn delete_char_before(value: &str, cursor_pos: usize) -> (String, usize) {
     let mut chars: Vec<char> = value.chars().collect();
     let pos = cursor_pos.min(chars.len());
@@ -308,6 +326,15 @@ pub(super) fn delete_char_before(value: &str, cursor_pos: usize) -> (String, usi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn insert_str_and_sanitize_paste() {
+        let (s, pos) = insert_str("ab", 1, "XY");
+        assert_eq!(s, "aXYb");
+        assert_eq!(pos, 3);
+        assert_eq!(sanitize_paste("one\ntwo", false), "one");
+        assert_eq!(sanitize_paste("one\r\ntwo", true), "one\ntwo");
+    }
 
     #[test]
     fn wrap_splits_long_line() {

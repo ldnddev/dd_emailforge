@@ -12,10 +12,7 @@ use super::tree::{Step, TreeId};
 impl App {
     pub(in crate::tui) fn open_insert_picker(&mut self) {
         if self.template.is_none() {
-            self.push_toast(
-                ToastLevel::Warning,
-                "No template open. Run: dd_emailforge init <dir>",
-            );
+            self.push_toast(ToastLevel::Warning, super::EMPTY_TEMPLATE_HINT);
             return;
         }
         let class = classify(
@@ -70,7 +67,10 @@ impl App {
     }
 }
 
-fn expand_ancestors(collapsed: &mut std::collections::HashSet<TreeId>, id: &TreeId) {
+pub(in crate::tui) fn expand_ancestors(
+    collapsed: &mut std::collections::HashSet<TreeId>,
+    id: &TreeId,
+) {
     collapsed.remove(&TreeId::Body);
     let TreeId::Path(path) = id else {
         return;

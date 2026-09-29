@@ -17,6 +17,25 @@ impl App {
                     "Enter or Ctrl+S: save  |  Esc: cancel",
                 );
             }
+            Modal::OpenPrompt { path } => {
+                self.render_message_modal(
+                    frame,
+                    " Open template ",
+                    &format!("Path to template.json or folder:\n{path}"),
+                    "Enter: open  |  Esc: cancel",
+                );
+            }
+            Modal::NewPrompt { path, starter } => {
+                self.render_message_modal(
+                    frame,
+                    " New template ",
+                    &format!(
+                        "Folder:\n{path}\n\nStarter: {}\nTab: cycle starter",
+                        starter.as_str()
+                    ),
+                    "Enter: create  |  Esc: cancel",
+                );
+            }
             Modal::ConfirmPrompt { message, .. } => {
                 self.render_message_modal(
                     frame,
@@ -96,7 +115,7 @@ impl App {
     fn render_validation_errors_modal(
         &self,
         frame: &mut ratatui::Frame,
-        errors: &[String],
+        errors: &[crate::validate::ValidateIssue],
         scroll_offset: usize,
     ) {
         let area = centered_rect(70, 60, frame.area());
@@ -121,28 +140,39 @@ impl App {
         let content_w = inner.width.saturating_sub(padding_x * 2);
         let footer_height: u16 = 1;
         let list_height = inner.height.saturating_sub(footer_height);
-        let lines: Vec<String> = errors.iter().map(|e| format!("- {e}")).collect();
-        let visible: Vec<String> = lines
-            .iter()
-            .skip(scroll_offset)
-            .take(list_height as usize)
-            .cloned()
-            .collect();
-        frame.render_widget(
-            Paragraph::new(visible.join("\n")).style(
+        let visible = list_height as usize;
+        let selected = scroll_offset.min(errors.len().saturating_sub(1));
+        let start = if visible == 0 || errors.is_empty() {
+            0
+        } else if selected >= visible {
+            selected + 1 - visible
+        } else {
+            0
+        };
+        for (i, issue) in errors.iter().skip(start).take(visible).enumerate() {
+            let row = inner.y + i as u16;
+            let is_sel = start + i == selected;
+            let style = if is_sel {
+                Style::default()
+                    .fg(self.theme.text_active_focus)
+                    .bg(self.theme.selected_background)
+            } else {
                 Style::default()
                     .fg(self.theme.modal_text)
-                    .bg(self.theme.modal_background),
-            ),
-            Rect {
-                x: content_x,
-                y: inner.y,
-                width: content_w,
-                height: list_height,
-            },
-        );
+                    .bg(self.theme.modal_background)
+            };
+            frame.render_widget(
+                Paragraph::new(format!("- {issue}")).style(style),
+                Rect {
+                    x: content_x,
+                    y: row,
+                    width: content_w,
+                    height: 1,
+                },
+            );
+        }
         frame.render_widget(
-            Paragraph::new("Enter / Esc: close  |  j/k: scroll").style(
+            Paragraph::new("Enter: jump  |  Esc: close  |  j/k: select").style(
                 Style::default()
                     .fg(self.theme.modal_labels)
                     .bg(self.theme.modal_background),
@@ -229,7 +259,9 @@ impl App {
             Some(editform::FieldKind::Checkboxes { .. }) => {
                 "Tab/Up/Down: navigate  |  ←/→: move  |  Space: toggle  |  Ctrl+S: save  |  Esc: cancel"
             }
-            _ => "Tab/Up/Down: navigate  |  ←/→: cycle enum  |  Ctrl+S: save  |  Esc: cancel",
+            _ => {
+                "Tab/Up/Down: navigate  |  ←/→: cycle enum  |  paste  |  Ctrl+S: save  |  Esc: cancel"
+            }
         };
         frame.render_widget(
             Paragraph::new(help_text).style(

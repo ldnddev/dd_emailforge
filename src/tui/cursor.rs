@@ -31,6 +31,7 @@ pub fn apply_form(template: &mut Template, id: &TreeId, state: &EditFormState) -
 
 fn head_to_form(t: &Template) -> EditFormState {
     let mut s = EditFormState::new(&editform::HEAD_FORM);
+    s.set("name", t.name.clone());
     s.set("subject", t.subject.clone());
     s.set("preheader", t.preheader.clone());
     s.set("lang", t.lang.clone());
@@ -54,6 +55,7 @@ fn head_to_form(t: &Template) -> EditFormState {
 }
 
 fn apply_head(t: &mut Template, state: &EditFormState) -> Result<()> {
+    t.name = state.get("name").to_string();
     t.subject = state.get("subject").to_string();
     t.preheader = state.get("preheader").to_string();
     t.lang = state.get("lang").to_string();

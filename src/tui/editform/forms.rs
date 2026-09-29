@@ -365,6 +365,7 @@ pub static SOCIAL_ITEM_FORM: EditForm = EditForm {
 pub static HEAD_FORM: EditForm = EditForm {
     title: "mj-head",
     fields: &[
+        f("name", "Name", FieldKind::Text { default: "" }, true),
         f("subject", "Subject", FieldKind::Text { default: "" }, true),
         f(
             "preheader",

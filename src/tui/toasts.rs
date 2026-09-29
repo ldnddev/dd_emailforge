@@ -3,6 +3,8 @@
 
 use super::*;
 
+pub(super) const TOAST_TTL: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub(super) enum ToastLevel {
@@ -33,7 +35,7 @@ impl App {
     pub(super) fn prune_toasts(&mut self) {
         let now = std::time::Instant::now();
         self.toasts
-            .retain(|t| now.duration_since(t.shown_at) < std::time::Duration::from_secs(5));
+            .retain(|t| now.duration_since(t.shown_at) < TOAST_TTL);
     }
 
     pub(super) fn render_toasts(&self, frame: &mut ratatui::Frame, area: Rect) {
