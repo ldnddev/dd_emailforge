@@ -187,7 +187,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ),
             ("Space", "Toggle focused checkbox (border sides)"),
             ("A / X", "Add / remove collection row (fonts, social)"),
-            ("Ctrl+S", "Save (or return from a drilled-in item)"),
+            ("Ctrl+S", "Save (rewrites template.mjml for live preview)"),
             ("Ctrl+P", "Image picker on src / background_url fields"),
             ("Ctrl+E", "Expand focused textarea to a full-size editor"),
             ("Esc", "Close expanded textarea, or cancel edit"),

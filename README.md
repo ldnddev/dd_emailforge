@@ -10,7 +10,7 @@ Terminal-UI email template builder. Edit a typed `template.json`, export strict 
 curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash
 ```
 
-That detects OS/arch, downloads the matching GitHub Release (`linux`/`darwin` × `x86_64`/`aarch64`), and installs `$HOME/.local/bin/dd_emailforge`. Theme → `$HOME/.config/ldnddev/` (existing theme is left alone). Pin a version with `VERSION=v0.9.1`. Uninstall: pipe the same script with `bash -s -- uninstall`.
+That detects OS/arch, downloads the matching GitHub Release (`linux`/`darwin` × `x86_64`/`aarch64`), and installs `$HOME/.local/bin/dd_emailforge`. Theme → `$HOME/.config/ldnddev/` (existing theme is left alone). Pin a version with `VERSION=v0.9.2`. Uninstall: pipe the same script with `bash -s -- uninstall`.
 
 From a clone (builds with cargo):
 
@@ -31,7 +31,7 @@ cd my-email && npm install
 dd_emailforge ./my-email
 ```
 
-`dd_emailforge` is the app: bare, or a path. `n` New and `o` Open work inside it. A directory argument means `dir/template.json`. Starters: `welcome` (default) · `newsletter` · `promo` · `transactional`. `init`, `validate`, `export`, `preview`, and `show` are optional CLI tools.
+`dd_emailforge` is the app: a path, or bare (reopens the last template). `n` New and `o` Open work inside it. A directory argument means `dir/template.json`. Starters: `welcome` (default) · `newsletter` · `promo` · `transactional`. `init`, `validate`, `export`, `preview`, and `show` are optional CLI tools.
 
 Quit is **Ctrl+Q** only. Full keys, preview, and export: the [tutorial](https://ldnddev.github.io/dd_emailforge/) and `F1` in the TUI.
 

@@ -62,7 +62,7 @@ pub fn run_tui(path: Option<PathBuf>) -> anyhow::Result<()> {
     let (theme, theme_source, load_warning) = AppTheme::load();
 
     let resolved = match path {
-        None => None,
+        None => storage::load_last_template(),
         Some(p) => Some(storage::resolve_template_path(&p)?),
     };
 
@@ -104,6 +104,7 @@ pub fn run_tui(path: Option<PathBuf>) -> anyhow::Result<()> {
         app.modal = Some(Modal::LoadError { message: msg });
     }
     if let (Some(p), Some(_)) = (app.path.as_ref(), app.template.as_ref()) {
+        storage::remember_last_template(p);
         let backup = storage::backup_path_for(p);
         if backup.exists() && p.exists() {
             if let (Ok(main), Ok(bak)) =
@@ -393,6 +394,7 @@ impl App {
         self.dirty = false;
         self.dirty_since = None;
         self.path = Some(path.to_path_buf());
+        storage::remember_last_template(path);
         self.write_mjml_sidecar();
         Ok(())
     }

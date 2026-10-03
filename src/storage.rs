@@ -100,6 +100,50 @@ pub fn save_template(path: &Path, template: &Template) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Persist `json_path` so a bare `dd_emailforge` can reopen it.
+/// No-op under `cargo test` so TUI tests do not write into `~/.config`.
+pub fn remember_last_template(json_path: &Path) {
+    if cfg!(test) {
+        return;
+    }
+    let _ = remember_last_template_at(&crate::paths::config_dir(), json_path);
+}
+
+pub fn remember_last_template_at(config: &Path, json_path: &Path) -> io::Result<()> {
+    let file = crate::paths::last_template_file_from(config);
+    if let Some(parent) = file.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let stored = json_path
+        .canonicalize()
+        .unwrap_or_else(|_| json_path.to_path_buf());
+    fs::write(file, stored.to_string_lossy().as_bytes())
+}
+
+/// Last remembered `template.json`, if that path still resolves.
+pub fn load_last_template() -> Option<PathBuf> {
+    if cfg!(test) {
+        return None;
+    }
+    load_last_template_at(&crate::paths::config_dir())
+}
+
+pub fn load_last_template_at(config: &Path) -> Option<PathBuf> {
+    let file = crate::paths::last_template_file_from(config);
+    let raw = fs::read_to_string(&file).ok()?;
+    let p = PathBuf::from(raw.trim());
+    if p.as_os_str().is_empty() {
+        return None;
+    }
+    match resolve_template_path(&p) {
+        Ok(json) => Some(json),
+        Err(_) => {
+            let _ = fs::remove_file(file);
+            None
+        }
+    }
+}
+
 pub fn load_template(path: &Path) -> Result<Template, LoadError> {
     let raw = fs::read_to_string(path).map_err(LoadError::Io)?;
     let peek: VersionPeek =
@@ -224,5 +268,41 @@ mod tests {
         let dumped = serde_json::to_string(&t).unwrap();
         assert!(!dumped.contains("mystery"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remember_and_load_last_template_round_trip() {
+        let config = temp_dir();
+        let tmpl = temp_dir();
+        let json = tmpl.join("template.json");
+        fs::write(&json, "{}").unwrap();
+        remember_last_template_at(&config, &json).unwrap();
+        let loaded = load_last_template_at(&config).expect("last path");
+        assert_eq!(loaded, json.canonicalize().unwrap());
+        let _ = fs::remove_dir_all(&config);
+        let _ = fs::remove_dir_all(&tmpl);
+    }
+
+    #[test]
+    fn load_last_template_forgets_missing_path() {
+        let config = temp_dir();
+        let missing = PathBuf::from("/no/such/dd_emailforge/template.json");
+        remember_last_template_at(&config, &missing).unwrap();
+        assert!(load_last_template_at(&config).is_none());
+        assert!(!crate::paths::last_template_file_from(&config).exists());
+        let _ = fs::remove_dir_all(&config);
+    }
+
+    #[test]
+    fn load_last_template_accepts_directory_argument() {
+        let config = temp_dir();
+        let tmpl = temp_dir();
+        let json = tmpl.join("template.json");
+        fs::write(&json, "{}").unwrap();
+        remember_last_template_at(&config, &tmpl).unwrap();
+        let loaded = load_last_template_at(&config).expect("dir should resolve");
+        assert_eq!(loaded, json.canonicalize().unwrap());
+        let _ = fs::remove_dir_all(&config);
+        let _ = fs::remove_dir_all(&tmpl);
     }
 }

@@ -96,6 +96,7 @@ impl App {
                         self.form_textarea_expanded = false;
                         let msg = format!("Saved {}.", state.form.title);
                         self.push_toast(ToastLevel::Success, msg);
+                        self.write_mjml_sidecar();
                         return Some(ModalResult::CloseSuccess);
                     }
                     Err(e) => {

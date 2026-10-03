@@ -742,6 +742,43 @@ fn brand_edit_saves() {
 }
 
 #[test]
+fn formedit_save_and_undo_rewrite_mjml_sidecar() {
+    let dir = unique_temp("sidecar");
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let json = dir.join("template.json");
+    let mut app = App::new(
+        AppTheme::default(),
+        "default".to_string(),
+        None,
+        Some(crate::model::Template::minimal()),
+        Some(json),
+    );
+    app.selected_row = 1;
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    form_state_mut(&mut app).set("font_family", "Raleway, Arial, sans-serif");
+    send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+    let mjml = dir.join("template.mjml");
+    let after_save = std::fs::read_to_string(&mjml).expect("sidecar after FormEdit");
+    assert!(
+        after_save.contains("Raleway, Arial, sans-serif"),
+        "{after_save}"
+    );
+    send_key(&mut app, KeyCode::Char('u'), KeyModifiers::NONE);
+    let after_undo = std::fs::read_to_string(&mjml).expect("sidecar after undo");
+    assert!(
+        !after_undo.contains("Raleway, Arial, sans-serif"),
+        "{after_undo}"
+    );
+    send_key(&mut app, KeyCode::Char('U'), KeyModifiers::NONE);
+    let after_redo = std::fs::read_to_string(&mjml).expect("sidecar after redo");
+    assert!(
+        after_redo.contains("Raleway, Arial, sans-serif"),
+        "{after_redo}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn add_google_font_row() {
     let mut app = app_with_template();
     send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);

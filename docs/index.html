@@ -189,7 +189,7 @@
       <h2 id="install">Install</h2>
       <p>Download the package that matches this machine (Linux or macOS, x86_64 or aarch64):</p>
       <pre>curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash</pre>
-      <p>That installs <code>$HOME/.local/bin/dd_emailforge</code>, writes the default theme to <code>~/.config/ldnddev/dd_emailforge_theme.yml</code> (only if none exists), and creates <code>~/.config/ldnddev/dd_emailforge/templates/</code>. Pin a release with <code>VERSION=v0.9.1</code>.</p>
+      <p>That installs <code>$HOME/.local/bin/dd_emailforge</code>, writes the default theme to <code>~/.config/ldnddev/dd_emailforge_theme.yml</code> (only if none exists), and creates <code>~/.config/ldnddev/dd_emailforge/templates/</code>. Pin a release with <code>VERSION=v0.9.2</code>.</p>
       <p>From a clone of this repo (builds with cargo):</p>
       <pre>./install.sh
 ./install.sh --from-release   # GitHub package even from a clone</pre>
@@ -228,7 +228,7 @@ dd_emailforge .</pre>
       <p class="muted">Welcome ships Google Font Raleway. Starter images are <code>https://dummyimage.com/…</code> placeholders.</p>
 
       <h2 id="tui">Open the TUI</h2>
-      <p>Bare <code>dd_emailforge</code> (or a path) opens the TUI. You’ll get an info toast until a template exists; <kbd>n</kbd> New and <kbd>o</kbd> Open work in the editor:</p>
+      <p>Bare <code>dd_emailforge</code> reopens the last template, or starts empty if none is remembered. A path argument opens that folder. You’ll get an info toast until a template exists; <kbd>n</kbd> New and <kbd>o</kbd> Open work in the editor:</p>
       <figure>
         <img src="images/tui-empty.png" alt="Empty TUI: Structure shows HEAD, BRAND, BODY; a toast says run init">
         <figcaption>No template open. <kbd>n</kbd> creates a starter folder; <kbd>o</kbd> opens <code>template.json</code> or a folder.</figcaption>
@@ -254,7 +254,7 @@ dd_emailforge .</pre>
 
       <h2 id="edit">Edit, insert, select</h2>
       <h3>FormEdit</h3>
-      <p>Select a row and press <kbd>Enter</kbd> (or double-click). Tab between fields, cycle enums with left/right, <kbd>Ctrl+S</kbd> saves, <kbd>Esc</kbd> cancels. On image URL fields, <kbd>Ctrl+P</kbd> opens a picker rooted at <code>images/</code> (it cannot walk above the template folder).</p>
+      <p>Select a row and press <kbd>Enter</kbd> (or double-click). Tab between fields, cycle enums with left/right, <kbd>Ctrl+S</kbd> saves and rewrites <code>template.mjml</code> so a live preview updates immediately, <kbd>Esc</kbd> cancels. On image URL fields, <kbd>Ctrl+P</kbd> opens a picker rooted at <code>images/</code> (it cannot walk above the template folder).</p>
       <figure>
         <img src="images/tui-formedit.png" alt="FormEdit modal on email-header with logo src, alt, href, and width fields">
         <figcaption>Editing <code>email-header</code>. Dummyimage URLs in starters are valid <code>https://</code> placeholders — swap them for real assets.</figcaption>

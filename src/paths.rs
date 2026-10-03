@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[allow(dead_code)]
 pub fn config_dir() -> PathBuf {
@@ -27,6 +27,15 @@ pub fn theme_global() -> PathBuf {
 #[allow(dead_code)]
 pub fn library_dir() -> PathBuf {
     config_dir().join("dd_emailforge").join("templates")
+}
+
+/// One-line file holding the last opened `template.json` path.
+pub fn last_template_file() -> PathBuf {
+    last_template_file_from(&config_dir())
+}
+
+pub fn last_template_file_from(config: &Path) -> PathBuf {
+    config.join("dd_emailforge").join("last_path")
 }
 
 /// Ordered (path, source-label) pairs. First existing valid `version: 1` file wins.
@@ -127,5 +136,10 @@ mod tests {
         assert!(config_dir().ends_with("ldnddev"));
         assert!(theme_global().ends_with("dd_emailforge_theme.yml"));
         assert!(library_dir().ends_with("dd_emailforge/templates"));
+        assert!(last_template_file().ends_with("dd_emailforge/last_path"));
+        assert_eq!(
+            last_template_file_from(&PathBuf::from("/tmp/xdg-config/ldnddev")),
+            PathBuf::from("/tmp/xdg-config/ldnddev/dd_emailforge/last_path")
+        );
     }
 }

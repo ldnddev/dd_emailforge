@@ -32,6 +32,7 @@ impl App {
         }
         self.template = Some(prev);
         self.clamp_tree_selection();
+        self.write_mjml_sidecar();
         self.push_toast(ToastLevel::Success, "Undid last change.");
     }
 
@@ -48,6 +49,7 @@ impl App {
         }
         self.template = Some(next);
         self.clamp_tree_selection();
+        self.write_mjml_sidecar();
         self.push_toast(ToastLevel::Success, "Redid last change.");
     }
 

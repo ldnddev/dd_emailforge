@@ -12,7 +12,7 @@ src/
   main.rs                 clap: dd_emailforge [PATH] is the app; init / validate / export / preview / show
   model.rs                Template → brand / head / body.nodes (serde, kebab-case tags)
   padding.rs              MJML padding shorthand (1-4 px/% values; bare numbers → px)
-  storage.rs              JSON load/save, path resolve, atomic write, .backup
+  storage.rs              JSON load/save, path resolve, atomic write, .backup, last_path
   validate.rs             structural + images + marketing footer + version + padding
   emit.rs                 Template → MJML (Preview vs Export rewrite of image src)
   mjml.rs                 discover official CLI, one-shot compile, mjml -w
@@ -84,7 +84,7 @@ loop:
     (skip KeyEventKind::Release, mouse Moved/Drag/Up, focus; Resize redraws)
 ```
 
-`Shift+E` compiles MJML off the UI thread. `p` starts `mjml -w` and opens the browser without sleeping on the first compile; the wrapper shows `compiling...` until `/__mtime` advances.
+`Shift+E` compiles MJML off the UI thread. `p` starts `mjml -w` and opens the browser without sleeping on the first compile; the wrapper shows `compiling...` until `/__mtime` advances. FormEdit `Ctrl+S` and undo/redo rewrite `template.mjml` immediately. Bare launch reopens `$XDG_CONFIG_HOME/ldnddev/dd_emailforge/last_path`.
 
 Body is master/detail (Structure tree + Details inspector), not siteforge's Regions/Pages/Layout. Below 48 columns, Structure only.
 

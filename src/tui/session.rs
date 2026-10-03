@@ -108,6 +108,7 @@ impl App {
     fn adopt_template(&mut self, template: crate::model::Template, path: PathBuf) {
         self.last_saved_json = serde_json::to_string(&template).unwrap_or_default();
         self.template = Some(template);
+        storage::remember_last_template(&path);
         self.path = Some(path);
         self.dirty = false;
         self.dirty_since = None;
