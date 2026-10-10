@@ -1809,3 +1809,102 @@ fn f3_enter_jumps_to_head_name() {
         other => panic!("expected FormEdit on Head name, got {other:?}"),
     }
 }
+
+fn section_widths_of(app: &App, node: usize) -> Vec<String> {
+    let crate::model::BodyNode::MjSection(s) = &app.template.as_ref().unwrap().body.nodes[node]
+    else {
+        panic!("expected mj-section");
+    };
+    s.children
+        .iter()
+        .map(|c| match c {
+            crate::model::SectionChild::MjColumn(col) => col.width.clone().unwrap_or_default(),
+            _ => panic!("expected column"),
+        })
+        .collect()
+}
+
+fn select_section_row(app: &mut App) {
+    let idx = app
+        .tree_rows()
+        .iter()
+        .position(|r| r.label.contains("mj-section"))
+        .expect("section row");
+    app.selected_row = idx;
+}
+
+fn set_widths(app: &mut App, widths: &[&str]) {
+    let crate::model::BodyNode::MjSection(s) = &mut app.template.as_mut().unwrap().body.nodes[0]
+    else {
+        panic!("expected mj-section");
+    };
+    s.children = widths
+        .iter()
+        .map(|w| {
+            crate::model::SectionChild::MjColumn(crate::model::MjColumn {
+                width: Some((*w).to_string()),
+                ..Default::default()
+            })
+        })
+        .collect();
+}
+
+#[test]
+fn c_keeps_custom_widths_30_70() {
+    let mut app = app_with_one_column();
+    set_widths(&mut app, &["30%", "70%"]);
+    select_section_row(&mut app);
+    send_key(&mut app, KeyCode::Char('C'), KeyModifiers::SHIFT);
+    assert_eq!(section_widths_of(&app, 0), vec!["20%", "46.67%", "33.33%"]);
+}
+
+#[test]
+fn c_keeps_equal_split_when_widths_are_default() {
+    let mut app = app_with_one_column();
+    set_widths(&mut app, &["50%", "50%"]);
+    select_section_row(&mut app);
+    send_key(&mut app, KeyCode::Char('C'), KeyModifiers::SHIFT);
+    assert_eq!(section_widths_of(&app, 0), vec!["33%", "33%", "34%"]);
+}
+
+#[test]
+fn v_redistributes_removed_width_proportionally() {
+    let mut app = app_with_one_column();
+    set_widths(&mut app, &["20%", "46.67%", "33.33%"]);
+    // Select the third column and remove it.
+    let idx = app
+        .tree_rows()
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.label.contains("mj-column"))
+        .nth(2)
+        .map(|(i, _)| i)
+        .expect("third column row");
+    app.selected_row = idx;
+    send_key(&mut app, KeyCode::Char('V'), KeyModifiers::SHIFT);
+    assert_eq!(section_widths_of(&app, 0), vec!["30%", "70%"]);
+}
+
+#[test]
+fn new_section_from_insert_starts_with_one_full_column() {
+    use super::component_kind::ComponentKind;
+    let mut app = app_with_one_column();
+    select_section_row(&mut app);
+    app.insert_kind(ComponentKind::MjSection);
+    let nodes = &app.template.as_ref().unwrap().body.nodes;
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(section_widths_of(&app, 1), vec!["100%"]);
+    // The new section validates as-is (an empty mj-section would not).
+    let report = crate::validate::validate_template(app.template.as_ref().unwrap());
+    assert!(
+        !report
+            .errors
+            .iter()
+            .any(|e| e.contains("mj-section has no children")),
+        "{:?}",
+        report.errors
+    );
+    // The first C on it gives two equal columns.
+    send_key(&mut app, KeyCode::Char('C'), KeyModifiers::SHIFT);
+    assert_eq!(section_widths_of(&app, 1), vec!["50%", "50%"]);
+}

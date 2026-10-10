@@ -2,10 +2,10 @@
 use crate::model::{BodyNode, ColumnChild, MjColumn, MjGroup, MjSection, SectionChild, Template};
 
 use super::App;
+use super::column_widths::{insert_group_column, insert_section_column};
 use super::component_kind::{
     ComponentKind, SelectionClass, classify, empty_column, empty_group, wrap_leaf_in_section,
 };
-use super::edits::rebalance_widths;
 use super::toasts::ToastLevel;
 use super::tree::{Step, TreeId};
 
@@ -165,9 +165,7 @@ fn insert_on_section(
     }
     if kind == ComponentKind::MjColumn {
         let s = section_mut(t, path).ok_or("illegal")?;
-        s.children.push(SectionChild::MjColumn(empty_column()));
-        rebalance_section(s);
-        let idx = s.children.len() - 1;
+        let idx = insert_section_column(s, s.children.len(), empty_column());
         let mut p = path.to_vec();
         p.push(Step::SectionChild(idx));
         return Ok((TreeId::Path(p), false));
@@ -250,9 +248,7 @@ fn insert_on_group(
         return Err("illegal");
     }
     let g = group_mut(t, path).ok_or("illegal")?;
-    g.children.push(empty_column());
-    rebalance_group(g);
-    let idx = g.children.len() - 1;
+    let idx = insert_group_column(g, g.children.len(), empty_column());
     let mut p = path.to_vec();
     p.push(Step::GroupCol(idx));
     Ok((TreeId::Path(p), false))
@@ -476,47 +472,19 @@ fn insert_column_after(t: &mut Template, path: &[Step]) -> Result<(TreeId, bool)
     match last {
         Step::SectionChild(i) => {
             let s = section_mut(t, parent).ok_or("illegal")?;
-            let at = (*i + 1).min(s.children.len());
-            s.children
-                .insert(at, SectionChild::MjColumn(empty_column()));
-            rebalance_section(s);
+            let at = insert_section_column(s, *i + 1, empty_column());
             let mut p = parent.to_vec();
             p.push(Step::SectionChild(at));
             Ok((TreeId::Path(p), false))
         }
         Step::GroupCol(i) => {
             let g = group_mut(t, parent).ok_or("illegal")?;
-            let at = (*i + 1).min(g.children.len());
-            g.children.insert(at, empty_column());
-            rebalance_group(g);
+            let at = insert_group_column(g, *i + 1, empty_column());
             let mut p = parent.to_vec();
             p.push(Step::GroupCol(at));
             Ok((TreeId::Path(p), false))
         }
         _ => Err("illegal"),
-    }
-}
-
-fn rebalance_section(s: &mut MjSection) {
-    let n = s
-        .children
-        .iter()
-        .filter(|c| matches!(c, SectionChild::MjColumn(_)))
-        .count();
-    let widths = rebalance_widths(n);
-    let mut i = 0;
-    for child in &mut s.children {
-        if let SectionChild::MjColumn(c) = child {
-            c.width = Some(widths[i].clone());
-            i += 1;
-        }
-    }
-}
-
-fn rebalance_group(g: &mut MjGroup) {
-    let widths = rebalance_widths(g.children.len());
-    for (c, w) in g.children.iter_mut().zip(widths) {
-        c.width = Some(w);
     }
 }
 

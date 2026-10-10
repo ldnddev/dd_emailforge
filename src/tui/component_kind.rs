@@ -457,8 +457,16 @@ pub(super) fn empty_column() -> MjColumn {
     MjColumn::default()
 }
 
+/// A section as inserted from the TUI: one full-width column, so it is valid
+/// right away (an empty mj-section fails validation) and the first `C` gives
+/// two columns.
 pub(super) fn empty_section() -> MjSection {
-    MjSection::default()
+    let mut col = empty_column();
+    col.width = Some("100%".into());
+    MjSection {
+        children: vec![SectionChild::MjColumn(col)],
+        ..Default::default()
+    }
 }
 
 pub(super) fn empty_hero() -> MjHero {
