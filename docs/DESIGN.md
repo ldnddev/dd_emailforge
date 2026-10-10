@@ -586,8 +586,12 @@ Wrapper JSON remains `Vec<BodyNode>` but validate + insert both restrict it to `
 
 **Column-edit rules** (`C` / `V` / `c` / `v`): apply to the enclosing `mj-section` or `mj-group` of the current tree selection. No-op (info toast) on HEAD/BRAND/BODY/wrapper/hero/block-without-columns.
 
-- `C` — append one `mj-column` and **rebalance** every sibling column’s `width` to equal percentages that sum to 100. Integer-divide: each of the first `n-1` columns gets `100 / n` percent; the **last** gets the remainder `100 - (100 / n) * (n - 1)`. Examples: 2 → `"50%", "50%"`; 3 → `"33%", "33%", "34%"`; 4 → `"25%", "25%", "25%", "25%"`. Newly added column has empty `components`.
-- `V` — delete the **current** column and rebalance the remainder the same way. **Refuse** deleting the last column (info toast `"A section needs at least one column"`).
+- `C` — append one `mj-column` (newly added column has empty `components`). Existing widths are **never discarded**:
+  - If the columns still use the default equal split (all unset, the integer split below, or all-equal percentages), the result is the equal split for `n + 1`. Integer-divide: each of the first `n-1` columns gets `100 / n` percent; the **last** gets the remainder `100 - (100 / n) * (n - 1)`. Examples: 2 → `"50%", "50%"`; 3 → `"33%", "33%", "34%"`; 4 → `"25%", "25%", "25%", "25%"`.
+  - Otherwise (custom percentages), the new column gets `100 / (n + 1)` percent and the existing columns shrink **in proportion**. Unset widths count as an equal share of what the set ones leave. Values are rounded to hundredths (largest remainder) so they always total exactly `100%`. Example: `"30%", "70%"` → `"20%", "46.67%", "33.33%"`.
+  - Non-percentage widths (e.g. `px`) are left unchanged and the new column gets no width (MJML sizes it).
+  - The same rules apply when an `mj-column` is inserted with `/` (on a section, group or column).
+- `V` — delete the **current** column and give its share back to the remaining columns **in proportion** (default equal split → equal split for `n - 1`; `"20%", "46.67%", "33.33%"` minus the last → `"30%", "70%"`; `px` widths unchanged). **Refuse** deleting the last column (info toast `"A section needs at least one column"`).
 - `c` / `v` — move the tree selection to the previous / next sibling column. Wrap at the ends. Identical whether Structure or Details is focused.
 
 ### Modals
@@ -1473,7 +1477,7 @@ Do not poke `app.show_help = true` when a key path exists.
 - `discover_mjml` prefers `node_modules/.bin/mjml`.
 - Preview server: serves wrapper, blocks `..`, images from `images/`; `GET /__meta` is `application/json` (`serde_json`, parseable); `GET /` entity-escapes `&` in subject.
 - TUI: `/` opens picker; Enter on brand opens FormEdit titled `brand`; `s` writes `.backup`; dirty **Ctrl+Q** confirms (bare `q` does not); F3 with empty subject opens ValidationErrors.
-- Insert wrap: leaf into empty body creates `mj-section`. `C` on a 1-column section yields two `"50%"` columns; 3 columns → `"33%", "33%", "34%"`. `V` on the last column is refused.
+- Insert wrap: leaf into empty body creates `mj-section`. A new `mj-section` inserted with `/` starts with one `"100%"` column (an empty section fails validation). `C` on a 1-column section yields two `"50%"` columns; 3 columns → `"33%", "33%", "34%"`. `C` on custom `"30%", "70%"` → `"20%", "46.67%", "33.33%"`; `V` hands a removed column's share back proportionally. `V` on the last column is refused.
 
 Official mjml is **not** required for `cargo test` on CI without Node. Tests that need the binary `#[ignore]` or skip when `discover_mjml` fails, with one ignored integration test `mjml_strict_compiles_welcome` for humans with Node.
 

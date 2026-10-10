@@ -1,7 +1,10 @@
 //! Undo, delete, duplicate, reorder, and column add/remove.
-use crate::model::{BodyNode, MjColumn, MjGroup, MjSection, SectionChild, Template};
+use crate::model::{BodyNode, MjColumn, MjGroup, SectionChild, Template};
 
 use super::App;
+use super::column_widths::{
+    insert_group_column, insert_section_column, remove_group_column, remove_section_column,
+};
 use super::toasts::ToastLevel;
 use super::tree::{Step, TreeId};
 
@@ -253,29 +256,6 @@ pub(super) fn rebalance_widths(n: usize) -> Vec<String> {
         .collect()
 }
 
-fn apply_rebalance_section(s: &mut MjSection) {
-    let n = s
-        .children
-        .iter()
-        .filter(|c| matches!(c, SectionChild::MjColumn(_)))
-        .count();
-    let widths = rebalance_widths(n);
-    let mut i = 0;
-    for child in &mut s.children {
-        if let SectionChild::MjColumn(c) = child {
-            c.width = Some(widths[i].clone());
-            i += 1;
-        }
-    }
-}
-
-fn apply_rebalance_group(g: &mut MjGroup) {
-    let widths = rebalance_widths(g.children.len());
-    for (c, w) in g.children.iter_mut().zip(widths) {
-        c.width = Some(w);
-    }
-}
-
 fn enclosing_columns(template: Option<&Template>, id: &TreeId) -> Option<ColOwner> {
     let TreeId::Path(path) = id else {
         return None;
@@ -426,18 +406,14 @@ fn insert_column(t: &mut Template, owner: &ColOwner) -> Option<TreeId> {
             let BodyNode::MjSection(s) = node_at_mut(t, &owner.owner_path)? else {
                 return None;
             };
-            s.children.push(SectionChild::MjColumn(empty_column()));
-            apply_rebalance_section(s);
-            let idx = s.children.len() - 1;
+            let idx = insert_section_column(s, s.children.len(), empty_column());
             let mut path = owner.owner_path.clone();
             path.push(Step::SectionChild(idx));
             Some(TreeId::Path(path))
         }
         ColOwnerKind::Group => {
             let g = group_at_mut(t, &owner.owner_path)?;
-            g.children.push(empty_column());
-            apply_rebalance_group(g);
-            let idx = g.children.len() - 1;
+            let idx = insert_group_column(g, g.children.len(), empty_column());
             let mut path = owner.owner_path.clone();
             path.push(Step::GroupCol(idx));
             Some(TreeId::Path(path))
@@ -468,8 +444,7 @@ fn delete_current_column(t: &mut Template, owner: &ColOwner) -> bool {
             if owner.col_index >= s.children.len() || s.children.len() <= 1 {
                 return false;
             }
-            s.children.remove(owner.col_index);
-            apply_rebalance_section(s);
+            remove_section_column(s, owner.col_index);
             true
         }
         ColOwnerKind::Group => {
@@ -479,8 +454,7 @@ fn delete_current_column(t: &mut Template, owner: &ColOwner) -> bool {
             if owner.col_index >= g.children.len() || g.children.len() <= 1 {
                 return false;
             }
-            g.children.remove(owner.col_index);
-            apply_rebalance_group(g);
+            remove_group_column(g, owner.col_index);
             true
         }
     }

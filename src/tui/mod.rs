@@ -24,6 +24,7 @@ use crate::storage;
 
 pub(in crate::tui) use draw::centered_rect;
 
+mod column_widths;
 mod component_kind;
 mod cursor;
 mod details;

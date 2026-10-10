@@ -105,7 +105,7 @@ Body is master/detail (Structure tree + Details inspector), not siteforge's Regi
 | `d` / `y` / `u` | Delete / duplicate / undo (cap 20) |
 | `U` / `Ctrl+R` | Redo |
 | `J` / `K` | Reorder |
-| `C` / `V` | Add / remove column (equal-% rebalance) |
+| `C` / `V` | Add / remove column (keeps custom % widths: proportional resize; equal split stays equal) |
 | `c` / `v` | Prev / next column |
 | `Ctrl+P` | Image picker on src fields (rooted at `images/`) |
 | `Ctrl+Q` | Quit (confirm if dirty). Bare `q` does not quit. |
