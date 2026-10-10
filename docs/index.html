@@ -280,12 +280,13 @@ dd_emailforge .</pre>
           <tr><th>Action</th><th>TUI</th><th>CLI</th></tr>
         </thead>
         <tbody>
-          <tr><td>Validate</td><td><kbd>F3</kbd></td><td><code>dd_emailforge validate &lt;dir&gt;</code></td></tr>
-          <tr><td>Preview</td><td><kbd>p</kbd></td><td><code>dd_emailforge preview &lt;dir&gt; --port 8766</code></td></tr>
-          <tr><td>Export MJML+HTML</td><td><kbd>Shift+E</kbd></td><td><code>dd_emailforge export &lt;dir&gt;</code></td></tr>
-          <tr><td>Dump JSON</td><td>—</td><td><code>dd_emailforge show &lt;dir&gt;/template.json</code></td></tr>
+          <tr><td>Validate</td><td><kbd>F3</kbd></td><td><code>dd_emailforge validate &lt;path&gt;</code></td></tr>
+          <tr><td>Preview</td><td><kbd>p</kbd></td><td><code>dd_emailforge preview &lt;path&gt; [--port 8766]</code></td></tr>
+          <tr><td>Export MJML+HTML</td><td><kbd>Shift+E</kbd></td><td><code>dd_emailforge export &lt;path&gt; [--out &lt;dir&gt;]</code></td></tr>
+          <tr><td>Dump JSON</td><td>—</td><td><code>dd_emailforge show &lt;path&gt;</code></td></tr>
         </tbody>
       </table>
+      <p><code>&lt;path&gt;</code> is a <code>template.json</code> or a folder containing one, matching <code>dd_emailforge &lt;command&gt; --help</code>.</p>
       <p>F3 / preview / export all gate on validation <em>errors</em>. Warnings (unused font, marketing unsub heuristic) toast or print but do not block.</p>
       <ul>
         <li>The compiler is official Node <code>mjml</code> only. Discovery: <code>{root}/node_modules/.bin/mjml</code>, then <code>PATH</code>. Never mrml, never <code>npx</code>.</li>
