@@ -120,9 +120,65 @@ fn footer_hint_starts_with_f1_help_and_ctrl_q() {
 
 #[test]
 fn footer_hint_wide_mentions_mouse() {
-    let app = chrome_app();
-    let hint = app.footer_hint(160);
+    let app = app_with_template();
+    let hint = app.footer_hint(180);
     assert!(hint.contains("mouse"), "{hint}");
+    assert!(hint.chars().count() <= 180, "{hint}");
+}
+
+#[test]
+fn empty_shell_has_no_ghost_tree() {
+    let mut app = chrome_app();
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw");
+    let text = buffer_text(&terminal);
+    assert!(text.contains("No template open."), "{text}");
+    assert!(text.contains("n  New"), "{text}");
+    assert!(text.contains("o  Open"), "{text}");
+    assert!(!text.contains("[HEAD]"), "{text}");
+    assert!(!text.contains("mj-head"), "{text}");
+    assert!(text.contains("Details"), "{text}");
+}
+
+#[test]
+fn required_field_labels_show_an_asterisk() {
+    let mut app = app_with_template();
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw");
+    let text = buffer_text(&terminal);
+    assert!(text.contains("Name *:"), "{text}");
+    assert!(text.contains("Subject *:"), "{text}");
+    assert!(text.contains("Preheader:"), "{text}");
+    assert!(!text.contains("Preheader *:"), "{text}");
+}
+
+#[test]
+fn form_edit_hint_keeps_save_and_cancel() {
+    let mut app = app_with_template();
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw");
+    let text = buffer_text(&terminal);
+    assert!(text.contains("Ctrl+S: save"), "{text}");
+    assert!(text.contains("Esc: cancel"), "{text}");
+}
+
+#[test]
+fn hint_line_drops_leading_keys_before_cancel() {
+    let line = super::util::fit_segments(
+        40,
+        &["Tab/Up/Down: navigate", "←/→: cycle enum", "paste"],
+        &["Ctrl+S: save", "Esc: cancel"],
+        "  |  ",
+    );
+    assert!(line.contains("Esc: cancel"), "{line}");
+    assert!(line.contains("Ctrl+S: save"), "{line}");
+    assert!(line.chars().count() <= 40, "{line}");
+    assert!(!line.contains("paste"), "{line}");
 }
 
 #[test]
@@ -524,7 +580,8 @@ fn footer_marks_dirty() {
     app.dirty = true;
     let hint = app.footer_hint(80);
     assert!(hint.starts_with("*  "), "{hint}");
-    assert!(hint.contains("F3"), "{hint}");
+    assert!(hint.contains("Enter: Edit"), "{hint}");
+    assert!(hint.chars().count() <= 80, "{hint}");
 }
 
 #[test]
@@ -1416,10 +1473,56 @@ fn blueprint_paints_section_background_and_keeps_selection_chrome() {
 fn footer_medium_mentions_insert() {
     let app = app_with_template();
     let hint = app.footer_hint(80);
-    assert!(
-        hint.contains("/: Insert") || hint.contains("/:Insert"),
-        "{hint}"
-    );
+    assert!(hint.contains("/: Insert"), "{hint}");
+    assert!(hint.contains("J/K: Move"), "{hint}");
+    assert!(hint.ends_with("Ctrl+Q: Quit"), "{hint}");
+    assert!(!hint.contains("u: Undo"), "{hint}");
+    assert!(hint.chars().count() <= 80, "{hint}");
+}
+
+#[test]
+fn footer_empty_offers_new_and_open() {
+    let app = chrome_app();
+    let hint = app.footer_hint(80);
+    assert!(hint.contains("n: New"), "{hint}");
+    assert!(hint.contains("o: Open"), "{hint}");
+    assert!(!hint.contains("Enter"), "{hint}");
+    assert!(hint.ends_with("Ctrl+Q: Quit"), "{hint}");
+}
+
+#[test]
+fn footer_drops_low_priority_keys_to_fit() {
+    let app = app_with_template();
+    for width in [40u16, 60, 80, 100, 120, 140, 160, 180] {
+        let hint = app.footer_hint(width);
+        assert!(
+            hint.chars().count() <= width as usize,
+            "width {width}: {} ({hint})",
+            hint.chars().count()
+        );
+        assert!(
+            hint.starts_with("F1:Help") || hint.starts_with("F1: Help"),
+            "width {width}: {hint}"
+        );
+        assert!(
+            hint.ends_with("C-q:Quit") || hint.ends_with("Ctrl+Q: Quit"),
+            "width {width}: {hint}"
+        );
+    }
+    let at_100 = app.footer_hint(100);
+    assert!(at_100.contains("u: Undo"), "{at_100}");
+    assert!(at_100.contains("F3: Validate"), "{at_100}");
+    assert!(!at_100.contains("Preview"), "{at_100}");
+    let at_120 = app.footer_hint(120);
+    assert!(at_120.contains("p: Preview"), "{at_120}");
+    assert!(!at_120.contains("Export"), "{at_120}");
+    let mut dirty = app_with_template();
+    dirty.dirty = true;
+    let dirty_100 = dirty.footer_hint(100);
+    assert!(dirty_100.starts_with("*  "), "{dirty_100}");
+    assert!(dirty_100.contains("u: Undo"), "{dirty_100}");
+    assert!(!dirty_100.contains("F3"), "{dirty_100}");
+    assert!(dirty_100.chars().count() <= 100, "{dirty_100}");
 }
 
 fn app_with_mj_text_form() -> App {

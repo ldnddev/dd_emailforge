@@ -30,7 +30,7 @@ Do not paint over the PNGs. After UI changes, recapture and commit.
 
 | PNG | Built in `src/tui/tutorial_shots.rs` |
 |---|---|
-| `tui-empty.png` | chrome, no template, init toast |
+| `tui-empty.png` | chrome, no template, n/o hint |
 | `tui-welcome.png` | welcome starter, BODY selected |
 | `tui-insert.png` | `/` on `mj-column` |
 | `tui-formedit.png` | Enter on `email-header` |

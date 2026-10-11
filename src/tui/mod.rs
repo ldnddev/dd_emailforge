@@ -329,43 +329,52 @@ impl App {
     }
 
     pub(super) fn footer_hint(&self, width: u16) -> String {
-        let dirty = if self.dirty { "*  " } else { "" };
-        let parts: &[&str] = if self.modal.is_some() || self.show_help || self.show_theme {
-            if width < 80 {
+        let compact = width < 80;
+        // Help, theme, and other modals keep a fixed close/quit bar.
+        if self.modal.is_some() || self.show_help || self.show_theme {
+            let parts: &[&str] = if compact {
                 &["F1:Help", "Esc:Close", "C-q:Quit"]
             } else {
                 &["F1:Help", "Esc:Close", "Ctrl+Q:Quit"]
+            };
+            return footer_line(self.dirty, parts);
+        }
+
+        let (head, middle, tail): (&str, &[&str], &str) = if self.template.is_none() {
+            if compact {
+                ("F1:Help", &["n:New", "o:Open"], "C-q:Quit")
+            } else {
+                ("F1: Help", &["n: New", "o: Open"], "Ctrl+Q: Quit")
             }
-        } else if width < 80 {
-            &["F1:Help", "F3:Val", "n:New", "o:Open", "s:Save", "C-q:Quit"]
-        } else if width < 120 {
-            &[
-                "F1: Help",
-                "F2: Theme",
-                "F3: Validate",
-                "n: New",
-                "o: Open",
-                "s: Save",
-                "/: Insert",
-                "Ctrl+Q: Quit",
-            ]
+        } else if compact {
+            (
+                "F1:Help",
+                &[
+                    "Ent:Edit", "/:Ins", "d:Del", "y:Dup", "JK:Move", "u:Undo", "F3:Val", "p:Prev",
+                    "S+E:Exp", "s:Save", "(mouse)",
+                ],
+                "C-q:Quit",
+            )
         } else {
-            &[
+            (
                 "F1: Help",
-                "F2: Theme",
-                "F3: Validate",
-                "n: New",
-                "o: Open",
-                "p: Preview",
-                "Shift+E: Export",
-                "s: Save",
-                "/: Insert",
-                "u/U: Undo/Redo",
+                &[
+                    "Enter: Edit",
+                    "/: Insert",
+                    "d: Delete",
+                    "y: Dup",
+                    "J/K: Move",
+                    "u: Undo",
+                    "F3: Validate",
+                    "p: Preview",
+                    "Shift+E: Export",
+                    "s: Save",
+                    "(mouse: click/scroll)",
+                ],
                 "Ctrl+Q: Quit",
-                "(mouse: click/scroll)",
-            ]
+            )
         };
-        format!("{dirty}{}", parts.join("  "))
+        fit_footer(width, self.dirty, head, middle, tail)
     }
 
     pub(super) fn mark_dirty_if_changed(&mut self) {
@@ -463,4 +472,26 @@ impl App {
             self.should_quit = true;
         }
     }
+}
+
+/// `F1` stays first and quit stays last. Drop `middle` from the end until the line fits.
+fn fit_footer(width: u16, dirty: bool, head: &str, middle: &[&str], tail: &str) -> String {
+    let limit = width as usize;
+    let mut keep = middle.len();
+    loop {
+        let mut parts = Vec::with_capacity(keep + 2);
+        parts.push(head);
+        parts.extend_from_slice(&middle[..keep]);
+        parts.push(tail);
+        let line = footer_line(dirty, &parts);
+        if line.chars().count() <= limit || keep == 0 {
+            return line;
+        }
+        keep -= 1;
+    }
+}
+
+fn footer_line(dirty: bool, parts: &[&str]) -> String {
+    let body = parts.join("  ");
+    if dirty { format!("*  {body}") } else { body }
 }

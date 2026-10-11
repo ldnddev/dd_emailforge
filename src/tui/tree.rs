@@ -52,6 +52,9 @@ pub fn master_detail_tree_width(area_width: u16) -> Option<u16> {
 }
 
 pub fn build_tree(template: Option<&Template>, collapsed: &HashSet<TreeId>) -> Vec<TreeRow> {
+    let Some(t) = template else {
+        return Vec::new();
+    };
     let mut rows = Vec::new();
     rows.push(TreeRow {
         id: TreeId::Head,
@@ -65,15 +68,6 @@ pub fn build_tree(template: Option<&Template>, collapsed: &HashSet<TreeId>) -> V
         prefix: String::new(),
         expandable: false,
     });
-    let Some(t) = template else {
-        rows.push(TreeRow {
-            id: TreeId::Body,
-            label: "[BODY] mj-body".into(),
-            prefix: String::new(),
-            expandable: false,
-        });
-        return rows;
-    };
     let body_expandable = !t.body.nodes.is_empty();
     let body_expanded = body_expandable && !collapsed.contains(&TreeId::Body);
     rows.push(TreeRow {
@@ -602,12 +596,9 @@ mod tests {
     }
 
     #[test]
-    fn empty_template_has_three_roots() {
+    fn empty_template_has_no_rows() {
         let rows = build_tree(None, &HashSet::new());
-        assert_eq!(rows.len(), 3);
-        assert!(matches!(rows[0].id, TreeId::Head));
-        assert!(matches!(rows[1].id, TreeId::Brand));
-        assert!(matches!(rows[2].id, TreeId::Body));
+        assert!(rows.is_empty());
     }
 
     #[test]

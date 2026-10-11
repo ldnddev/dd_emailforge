@@ -15,7 +15,6 @@ pub struct FormField {
     pub id: &'static str,
     pub label: &'static str,
     pub kind: FieldKind,
-    #[allow(dead_code)]
     pub required: bool,
     pub visible_when: Option<FieldPredicate>,
     pub hint: Option<&'static str>,
@@ -48,6 +47,15 @@ impl BrandPlaceholder {
 }
 
 impl FormField {
+    /// Label as painted in FormEdit. Required fields get a trailing asterisk.
+    pub fn marked_label(&self) -> String {
+        if self.required {
+            format!("{} *:", self.label)
+        } else {
+            format!("{}:", self.label)
+        }
+    }
+
     pub fn resolved_placeholder(&self, brand: Option<&crate::model::Brand>) -> Option<String> {
         if let (Some(token), Some(brand)) = (self.brand_placeholder, brand) {
             let v = token.value(brand).trim();

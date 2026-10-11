@@ -39,7 +39,15 @@ pub fn details_view(
     width: usize,
 ) -> (Vec<String>, Vec<DetailHit>) {
     let Some(t) = template else {
-        return (vec!["No template open.".into()], Vec::new());
+        return (
+            vec![
+                "No template open.".into(),
+                String::new(),
+                "n  New starter".into(),
+                "o  Open template.json or a folder".into(),
+            ],
+            Vec::new(),
+        );
     };
     let Some(row) = row else {
         return (vec!["Nothing selected.".into()], Vec::new());

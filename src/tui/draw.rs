@@ -123,45 +123,68 @@ impl App {
             self.tree_scroll = self.selected_row + 1 - visible;
         }
 
-        let lines: Vec<Line> = rows
-            .iter()
-            .enumerate()
-            .map(|(i, row)| {
-                let text = format!("{}{}", row.prefix, row.label);
-                let style = if i == self.selected_row {
-                    Style::default()
-                        .fg(self.theme.text_active_focus)
-                        .bg(self.theme.selected_background)
-                } else {
-                    Style::default().fg(self.theme.text_primary)
-                };
-                Line::from(Span::styled(text, style))
-            })
-            .collect();
-        frame.render_widget(
-            Paragraph::new(lines)
+        if self.template.is_none() {
+            let muted = Style::default()
+                .fg(self.theme.text_secondary)
+                .bg(self.theme.body_background);
+            let key = Style::default()
+                .fg(self.theme.text_active_focus)
+                .bg(self.theme.body_background);
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(Span::styled("No template open.", muted)),
+                    Line::from(""),
+                    Line::from(Span::styled("n  New", key)),
+                    Line::from(Span::styled("o  Open", key)),
+                ])
                 .style(
                     Style::default()
                         .fg(self.theme.text_primary)
                         .bg(self.theme.body_background),
-                )
-                .scroll((self.tree_scroll as u16, 0)),
-            tree_inner,
-        );
-        let max_tree_scroll = rows.len().saturating_sub(visible);
-        if self.tree_scroll > max_tree_scroll {
-            self.tree_scroll = max_tree_scroll;
-        }
-        if rows.len() > visible && visible > 0 {
-            paint_scrollbar(
-                frame,
+                ),
                 tree_inner,
-                self.tree_scroll,
-                rows.len(),
-                self.theme.scrollbar,
-                self.theme.scrollbar_hover,
-                self.theme.body_background,
             );
+        } else {
+            let lines: Vec<Line> = rows
+                .iter()
+                .enumerate()
+                .map(|(i, row)| {
+                    let text = format!("{}{}", row.prefix, row.label);
+                    let style = if i == self.selected_row {
+                        Style::default()
+                            .fg(self.theme.text_active_focus)
+                            .bg(self.theme.selected_background)
+                    } else {
+                        Style::default().fg(self.theme.text_primary)
+                    };
+                    Line::from(Span::styled(text, style))
+                })
+                .collect();
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.text_primary)
+                            .bg(self.theme.body_background),
+                    )
+                    .scroll((self.tree_scroll as u16, 0)),
+                tree_inner,
+            );
+            let max_tree_scroll = rows.len().saturating_sub(visible);
+            if self.tree_scroll > max_tree_scroll {
+                self.tree_scroll = max_tree_scroll;
+            }
+            if rows.len() > visible && visible > 0 {
+                paint_scrollbar(
+                    frame,
+                    tree_inner,
+                    self.tree_scroll,
+                    rows.len(),
+                    self.theme.scrollbar,
+                    self.theme.scrollbar_hover,
+                    self.theme.body_background,
+                );
+            }
         }
 
         if details_area.width == 0 {
@@ -173,9 +196,13 @@ impl App {
         } else {
             self.theme.border_default
         };
-        let label = selected_label(&rows, self.selected_row);
+        let details_heading = if self.template.is_none() {
+            "Details".to_string()
+        } else {
+            details_title(&selected_label(&rows, self.selected_row))
+        };
         let details_block = Block::default()
-            .title(details_title(&label))
+            .title(details_heading)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(details_border))
             .style(

@@ -1,3 +1,4 @@
+use super::super::util::fit_segments;
 use super::super::*;
 
 impl App {
@@ -252,17 +253,26 @@ impl App {
 
         let help_rect = Rect::new(inner.x, inner.y, inner.width, 1);
         let focused_kind = state.form.fields.get(state.focused_field).map(|f| &f.kind);
-        let help_text = match focused_kind {
-            Some(editform::FieldKind::Textarea { .. }) => {
-                "Tab/Up/Down: line  |  Home/End  |  click: cursor  |  Ctrl+E: expand  |  Ctrl+S: save  |  Esc: cancel"
-            }
-            Some(editform::FieldKind::Checkboxes { .. }) => {
-                "Tab/Up/Down: navigate  |  ←/→: move  |  Space: toggle  |  Ctrl+S: save  |  Esc: cancel"
-            }
-            _ => {
-                "Tab/Up/Down: navigate  |  ←/→: cycle enum  |  paste  |  Ctrl+S: save  |  Esc: cancel"
-            }
+        let (leading, trailing): (&[&str], &[&str]) = match focused_kind {
+            Some(editform::FieldKind::Textarea { .. }) => (
+                &[
+                    "Tab/Up/Down: line",
+                    "Home/End",
+                    "click: cursor",
+                    "Ctrl+E: expand",
+                ],
+                &["Ctrl+S: save", "Esc: cancel"],
+            ),
+            Some(editform::FieldKind::Checkboxes { .. }) => (
+                &["Tab/Up/Down: navigate", "←/→: move", "Space: toggle"],
+                &["Ctrl+S: save", "Esc: cancel"],
+            ),
+            _ => (
+                &["Tab/Up/Down: navigate", "←/→: cycle enum", "paste"],
+                &["Ctrl+S: save", "Esc: cancel"],
+            ),
         };
+        let help_text = fit_segments(help_rect.width as usize, leading, trailing, "  |  ");
         frame.render_widget(
             Paragraph::new(help_text).style(
                 Style::default()
@@ -356,7 +366,7 @@ impl App {
                     Modifier::empty()
                 };
                 let mut label_spans = vec![Span::styled(
-                    format!("{}:", field.label),
+                    field.marked_label(),
                     Style::default()
                         .fg(label_color)
                         .bg(self.theme.modal_background)
@@ -502,7 +512,10 @@ impl App {
         let area = centered_rect(94, 90, frame.area());
         frame.render_widget(Clear, area);
         let outer = Block::default()
-            .title(format!(" {} — expanded ", field.label))
+            .title(format!(
+                " {} — expanded ",
+                field.marked_label().trim_end_matches(':')
+            ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(self.theme.border_active))
             .title_style(
@@ -518,11 +531,14 @@ impl App {
         }
 
         let help_rect = Rect::new(inner.x, inner.y, inner.width, 1);
+        let help_text = fit_segments(
+            help_rect.width as usize,
+            &["Enter: newline", "Home/End", "click: cursor"],
+            &["Ctrl+S: save", "Esc: back"],
+            "  |  ",
+        );
         frame.render_widget(
-            Paragraph::new(
-                "Esc: back  |  Ctrl+S: save  |  Enter: newline  |  Home/End  |  click: cursor",
-            )
-            .style(
+            Paragraph::new(help_text).style(
                 Style::default()
                     .fg(self.theme.modal_labels)
                     .bg(self.theme.modal_background)
@@ -847,13 +863,18 @@ impl App {
                 );
             }
         }
+        let insert_hint = fit_segments(
+            inner.width as usize,
+            &["Type to filter", "Up/Down: select", "Enter: insert"],
+            &["Esc: cancel"],
+            "  |  ",
+        );
         frame.render_widget(
-            Paragraph::new("Type to filter  |  Up/Down: select  |  Enter: insert  |  Esc: cancel")
-                .style(
-                    Style::default()
-                        .fg(self.theme.modal_labels)
-                        .bg(self.theme.modal_background),
-                ),
+            Paragraph::new(insert_hint).style(
+                Style::default()
+                    .fg(self.theme.modal_labels)
+                    .bg(self.theme.modal_background),
+            ),
             Rect::new(
                 inner.x,
                 inner.y + inner.height.saturating_sub(1),
@@ -948,13 +969,18 @@ impl App {
                 );
             }
         }
+        let image_hint = fit_segments(
+            content_w as usize,
+            &["↑/↓ move", "← parent", "→/Enter pick", "type filter"],
+            &["Esc cancel"],
+            "  |  ",
+        );
         frame.render_widget(
-            Paragraph::new("↑/↓ move  |  ← parent  |  →/Enter pick  |  type filter  |  Esc cancel")
-                .style(
-                    Style::default()
-                        .fg(self.theme.modal_labels)
-                        .bg(self.theme.modal_background),
-                ),
+            Paragraph::new(image_hint).style(
+                Style::default()
+                    .fg(self.theme.modal_labels)
+                    .bg(self.theme.modal_background),
+            ),
             Rect::new(
                 content_x,
                 inner.y + inner.height.saturating_sub(1),

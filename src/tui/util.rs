@@ -1,3 +1,34 @@
+/// Join `leading` then `trailing` with `sep`, dropping `leading` from the end
+/// until the line fits `width`. If the tail still overflows, drop it from the
+/// front so the last segment (usually cancel) stays.
+pub(super) fn fit_segments(width: usize, leading: &[&str], trailing: &[&str], sep: &str) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let mut lead = leading.len();
+    let mut trail_start = 0;
+    loop {
+        let mut parts: Vec<&str> =
+            Vec::with_capacity(lead + trailing.len().saturating_sub(trail_start));
+        parts.extend_from_slice(&leading[..lead]);
+        parts.extend_from_slice(&trailing[trail_start..]);
+        if parts.is_empty() {
+            return String::new();
+        }
+        let line = parts.join(sep);
+        if line.chars().count() <= width {
+            return line;
+        }
+        if lead > 0 {
+            lead -= 1;
+        } else if trail_start + 1 < trailing.len() {
+            trail_start += 1;
+        } else {
+            return line;
+        }
+    }
+}
+
 /// Spawn the OS-default opener on the given URL. All three stdio streams
 /// are redirected to /dev/null so the TUI in raw mode is not scrambled.
 pub(super) fn open_in_browser(target: &str) -> std::io::Result<()> {

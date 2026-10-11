@@ -189,7 +189,7 @@
       <h2 id="install">Install</h2>
       <p>Download the package that matches this machine (Linux or macOS, x86_64 or aarch64):</p>
       <pre>curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash</pre>
-      <p>That installs <code>$HOME/.local/bin/dd_emailforge</code>, writes the default theme to <code>~/.config/ldnddev/dd_emailforge_theme.yml</code> (only if none exists), and creates <code>~/.config/ldnddev/dd_emailforge/templates/</code>. Pin a release with <code>VERSION=v0.9.3</code>.</p>
+      <p>That installs <code>$HOME/.local/bin/dd_emailforge</code>, writes the default theme to <code>~/.config/ldnddev/dd_emailforge_theme.yml</code> (only if none exists), and creates <code>~/.config/ldnddev/dd_emailforge/templates/</code>. Pin a release with <code>VERSION=v0.9.4</code>.</p>
       <p>From a clone of this repo (builds with cargo):</p>
       <pre>./install.sh
 ./install.sh --from-release   # GitHub package even from a clone</pre>
@@ -230,20 +230,20 @@ dd_emailforge .</pre>
       <h2 id="tui">Open the TUI</h2>
       <p>Bare <code>dd_emailforge</code> reopens the last template, or starts empty if none is remembered. A path argument opens that folder. You’ll get an info toast until a template exists; <kbd>n</kbd> New and <kbd>o</kbd> Open work in the editor:</p>
       <figure>
-        <img src="images/tui-empty.png" alt="Empty TUI: Structure shows HEAD, BRAND, BODY; a toast says run init">
+        <img src="images/tui-empty.png" alt="Empty TUI. Structure and Details say no template is open, with n New and o Open. The footer shows F1 Help, n New, o Open, and Ctrl+Q Quit. An info toast repeats: no template open, n New, o Open.">
         <figcaption>No template open. <kbd>n</kbd> creates a starter folder; <kbd>o</kbd> opens <code>template.json</code> or a folder.</figcaption>
       </figure>
       <p>After <code>init --from welcome</code>:</p>
       <figure>
         <img src="images/tui-welcome.png" alt="Welcome starter in the TUI: structure tree on the left, full email blueprint on the right">
-        <figcaption>Master/detail: Structure tree (left) and a full-email ascii blueprint (right). Footer starts with <kbd>F1: Help</kbd>. Quit is <kbd>Ctrl+Q</kbd> only — bare <kbd>q</kbd> never quits.</figcaption>
+        <figcaption>Master/detail: Structure tree (left) and a full-email ascii blueprint (right). Footer starts with <kbd>F1: Help</kbd>. With a template open, edit keys follow <kbd>F1</kbd>. Quit is <kbd>Ctrl+Q</kbd> only — bare <kbd>q</kbd> never quits.</figcaption>
       </figure>
       <h3>Chrome</h3>
       <ul>
         <li><strong>Header</strong> — app name + a rotating tagline (3 rows, including borders).</li>
         <li><strong>Structure</strong> — <code>[HEAD]</code>, <code>[BRAND]</code>, <code>[BODY]</code>, then sections / columns / components. <kbd>j</kbd>/<kbd>k</kbd> move, <kbd>h</kbd>/<kbd>l</kbd> collapse/expand, <kbd>Space</kbd> toggles.</li>
         <li><strong>Details</strong> — field summary for the selection, then a blueprint of <em>every</em> layout node. The selected element is highlighted. Click a region to select it in the tree.</li>
-        <li><strong>Footer</strong> — one adaptive key bar. Narrow terminals drop keys; they never wrap.</li>
+        <li><strong>Footer</strong> — one adaptive key bar, <kbd>F1</kbd> first and <kbd>Ctrl+Q</kbd> last. With a template open it prefers edit keys (<kbd>Enter</kbd> Edit, <kbd>/</kbd> Insert, <kbd>d</kbd> Delete, <kbd>y</kbd> Dup, <kbd>J</kbd>/<kbd>K</kbd> Move). Empty, it shows <kbd>n</kbd> New and <kbd>o</kbd> Open. Narrow terminals drop the lower-priority keys; they never wrap.</li>
       </ul>
       <p>Below 48 columns, Details hides and you get Structure only. <kbd>Tab</kbd> toggles pane focus when both panes exist.</p>
       <p><kbd>F1</kbd> is the full key + mouse list:</p>
@@ -347,7 +347,7 @@ dd_emailforge preview ./my-email --port 8766</pre>
           <tr><th>File</th><th>Scene (edit <code>src/tui/tutorial_shots.rs</code> to change)</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>tui-empty.png</code></td><td>No template; info toast pointing at <code>init</code></td></tr>
+          <tr><td><code>tui-empty.png</code></td><td>No template. Structure and Details offer <kbd>n</kbd> New and <kbd>o</kbd> Open. Info toast repeats the hint.</td></tr>
           <tr><td><code>tui-welcome.png</code></td><td>Welcome starter, BODY selected, full blueprint</td></tr>
           <tr><td><code>tui-insert.png</code></td><td><kbd>/</kbd> picker on an <code>mj-column</code></td></tr>
           <tr><td><code>tui-formedit.png</code></td><td>FormEdit on <code>email-header</code></td></tr>
