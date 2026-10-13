@@ -152,15 +152,74 @@ release_base_url() {
     fi
 }
 
+# Verify $archive against the sha256 line that names it. A missing tool, a
+# missing line, or a mismatch aborts. `sha256sum -c` is not used: a checksum
+# file can name other paths, and those must not be hashed or written.
 verify_sha256() {
     local dir="$1" archive="$2" sumfile="$3"
+    local expected actual expected_l actual_l
+    expected="$(awk -v name="$archive" '
+        NF >= 2 {
+            hash = $1
+            file = $2
+            sub(/^\*/, "", file)
+            if (file == name) {
+                print hash
+                exit
+            }
+        }
+    ' "$dir/$sumfile" | tr -d "\r")"
+    if [ "$(printf '%s' "$expected" | wc -c | tr -d '[:space:]')" -ne 64 ] \
+        || printf '%s' "$expected" | grep -q '[^0-9A-Fa-f]'; then
+        red "Checksum file has no sha256 line for $archive — aborting."
+        return 1
+    fi
     if command -v sha256sum >/dev/null 2>&1; then
-        (cd "$dir" && sha256sum -c "$sumfile")
+        actual="$(sha256sum "$dir/$archive" | awk '{print $1}')"
     elif command -v shasum >/dev/null 2>&1; then
-        (cd "$dir" && shasum -a 256 -c "$sumfile")
+        actual="$(shasum -a 256 "$dir/$archive" | awk '{print $1}')"
     else
-        yellow "No sha256sum/shasum found — skipping checksum verification of $archive."
-        return 0
+        red "No sha256sum or shasum found — refusing to install $archive without verification."
+        return 1
+    fi
+    expected_l="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
+    actual_l="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
+    if [ "$actual_l" != "$expected_l" ]; then
+        red "Checksum mismatch for $archive — aborting."
+        return 1
+    fi
+}
+
+# Release archives are flat: the binary, the theme, and LICENSE. Anything else
+# (absolute paths, "..", extra files, directories) is rejected before extract.
+extract_release_archive() {
+    local archive="$1" dest="$2"
+    local member
+    local wanted=""
+    while IFS= read -r member; do
+        member="${member%$'\r'}"
+        [ -n "$member" ] || continue
+        case "$member" in
+            "$BIN_NAME"|"$THEME_FILE"|LICENSE) ;;
+            *)
+                red "Refusing archive member '$member'"
+                return 1
+                ;;
+        esac
+        wanted="$wanted $member"
+    done < <(tar -tzf "$archive")
+    case " $wanted " in
+        *" $BIN_NAME "*) ;;
+        *)
+            red "Archive did not contain $BIN_NAME"
+            return 1
+            ;;
+    esac
+    # shellcheck disable=SC2086
+    tar -xzf "$archive" -C "$dest" -- $wanted
+    if [ -L "$dest/$BIN_NAME" ] || [ ! -f "$dest/$BIN_NAME" ]; then
+        red "Archive $BIN_NAME is not a regular file — aborting."
+        return 1
     fi
 }
 
@@ -232,34 +291,21 @@ install_prebuilt_into() {
         return 1
     fi
 
-    if curl_get "$tmp/$sumfile" "$sum_url"; then
-        verify_sha256 "$tmp" "$archive" "$sumfile" || {
-            red "Checksum mismatch for $archive — aborting."
-            exit 1
-        }
-    else
-        yellow "No checksum file at $sum_url — installing without verification."
+    if ! curl_get "$tmp/$sumfile" "$sum_url"; then
+        red "No checksum file at $sum_url — refusing to install without verification."
+        exit 1
     fi
+    verify_sha256 "$tmp" "$archive" "$sumfile" || exit 1
 
-    tar -xzf "$tmp/$archive" -C "$tmp" || {
+    if ! extract_release_archive "$tmp/$archive" "$tmp"; then
         red "Failed to extract $archive"
         exit 1
-    }
+    fi
 
     src_bin="$tmp/$BIN_NAME"
-    if [ ! -f "$src_bin" ]; then
-        src_bin="$(find "$tmp" -type f -name "$BIN_NAME" | head -n 1 || true)"
-    fi
-    if [ -z "$src_bin" ] || [ ! -f "$src_bin" ]; then
-        red "Archive $archive did not contain $BIN_NAME"
-        return 1
-    fi
-
     src_theme=""
-    if [ -f "$tmp/$THEME_FILE" ]; then
+    if [ -f "$tmp/$THEME_FILE" ] && [ ! -L "$tmp/$THEME_FILE" ]; then
         src_theme="$tmp/$THEME_FILE"
-    else
-        src_theme="$(find "$tmp" -type f -name "$THEME_FILE" | head -n 1 || true)"
     fi
 
     cyan "Installing $BIN_NAME for $target…"
