@@ -257,6 +257,14 @@ fn validate_inner(t: &Template, root: Option<&Path>, opts: ValidateOpts<'_>) -> 
     report
 }
 
+fn check_link(report: &mut ValidateReport, field: &str, href: &str) {
+    let value = href.trim();
+    if value.is_empty() || crate::emit::is_safe_link(value) {
+        return;
+    }
+    report.error_field(field, format!("{field} uses an unsafe URL scheme: {value}"));
+}
+
 fn require_nonempty(report: &mut ValidateReport, field: &str, value: &str) {
     if value.trim().is_empty() {
         report.error_field(field, format!("{field} is empty"));
@@ -360,14 +368,20 @@ fn validate_css(t: &Template, report: &mut ValidateReport) {
     if css.is_empty() {
         return;
     }
-    if contains_ci(css, "</mj-style>") || contains_ci(css, "</mj-") {
+    if css.contains('<') || contains_ci(css, "</mj-style>") || contains_ci(css, "</mj-") {
         report.error_field(
             "css",
-            "head.css contains a forbidden MJML closer".to_string(),
+            "head.css contains markup and cannot be embedded in a style block".to_string(),
         );
     }
     if contains_ci(css, "@import") {
         report.error_field("css", "head.css must not contain @import".to_string());
+    }
+    if contains_ci(css, "javascript:") || contains_ci(css, "expression(") {
+        report.error_field(
+            "css",
+            "head.css contains a forbidden script or expression".to_string(),
+        );
     }
     for url in css_urls(css) {
         if !url.starts_with("https://fonts.googleapis.com/") {
@@ -430,6 +444,8 @@ fn walk_body(
             );
             if c.button_href.trim().is_empty() {
                 report.error_field("button_href", "email-cta.button_href is empty".to_string());
+            } else {
+                check_link(report, "email-cta.button_href", &c.button_href);
             }
         }
         BodyNode::EmailArticle(a) => walk_email_article(a, report, root, opts, relative_images),
@@ -806,6 +822,8 @@ fn walk_column_child(
             }
             if btn.href.trim().is_empty() {
                 report.error_field("href", "mj-button.href is empty".to_string());
+            } else {
+                check_link(report, "mj-button.href", &btn.href);
             }
         }
         ColumnChild::MjImage(img) => {
@@ -824,6 +842,9 @@ fn walk_column_child(
             check_opt_one_of(report, "mj-image.target", &img.target, &["_blank", "_self"]);
             if img.alt.trim().is_empty() {
                 report.error_field("alt", "mj-image.alt is empty".to_string());
+            }
+            if let Some(href) = &img.href {
+                check_link(report, "mj-image.href", href);
             }
         }
         ColumnChild::MjDivider(d) => {
@@ -864,6 +885,11 @@ fn walk_column_child(
                     "mj-table.content must be table rows (<tr>…</tr>), not a wrapping <table>"
                         .to_string(),
                 );
+            } else if !crate::emit::table_markup_is_safe(&table.content) {
+                report.error_field(
+                    "content",
+                    "mj-table.content contains disallowed HTML".to_string(),
+                );
             }
         }
         ColumnChild::MjNavbar(nav) => walk_navbar(nav, report),
@@ -873,6 +899,9 @@ fn walk_column_child(
 }
 
 fn walk_navbar(nav: &crate::model::MjNavbar, report: &mut ValidateReport) {
+    if let Some(base) = &nav.base_url {
+        check_link(report, "mj-navbar.base_url", base);
+    }
     check_color(report, "mj-navbar.ico_color", opt(&nav.ico_color));
     check_padding(report, "mj-navbar.padding", &nav.padding);
     if nav.links.is_empty() {
@@ -882,6 +911,8 @@ fn walk_navbar(nav: &crate::model::MjNavbar, report: &mut ValidateReport) {
         report.with_loc(LocFrame::Step(NodeStep::NavbarLink(i)), |report| {
             if link.href.trim().is_empty() {
                 report.error_field("href", "mj-navbar-link.href is empty".to_string());
+            } else {
+                check_link(report, "mj-navbar-link.href", &link.href);
             }
             check_color(report, "mj-navbar-link.color", opt(&link.color));
             check_padding(report, "mj-navbar-link.padding", &link.padding);
@@ -951,6 +982,9 @@ fn walk_carousel(
             if img.alt.trim().is_empty() {
                 report.error_field("alt", "mj-carousel-image.alt is empty".to_string());
             }
+            if let Some(href) = &img.href {
+                check_link(report, "mj-carousel-image.href", href);
+            }
             if let Some(thumb) = &img.thumbnails_src {
                 check_optional_image(
                     report,
@@ -968,6 +1002,8 @@ fn walk_carousel(
 fn check_social_element(el: &MjSocialElement, report: &mut ValidateReport) {
     if el.href.trim().is_empty() {
         report.error_field("href", "mj-social-element.href is empty".to_string());
+    } else {
+        check_link(report, "mj-social-element.href", &el.href);
     }
     if el.name == SocialNetwork::Web && el.src.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true)
     {
@@ -1001,6 +1037,9 @@ fn walk_email_header(
         opts,
         relative_images,
     );
+    if let Some(href) = &h.logo_href {
+        check_link(report, "email-header.logo_href", href);
+    }
     if !h.logo_src.trim().is_empty() && h.logo_alt.trim().is_empty() {
         report.error_field(
             "logo_alt",
@@ -1052,6 +1091,7 @@ fn walk_email_article(
         opts,
         relative_images,
     );
+    check_link(report, "email-article.link_href", &a.link_href);
     if !a.image_src.trim().is_empty() && a.image_alt.trim().is_empty() {
         report.error_field(
             "image_alt",
@@ -1071,6 +1111,7 @@ fn walk_email_footer(f: &EmailFooter, report: &mut ValidateReport) {
     for el in &f.social {
         check_social_element(el, report);
     }
+    check_link(report, "email-footer.unsubscribe_href", &f.unsubscribe_href);
     if has_address && f.unsubscribe_href.trim().is_empty() && !f.unsubscribe_label.trim().is_empty()
     {
         report.warning("marketing mail usually needs an unsubscribe link".to_string());
@@ -1658,6 +1699,34 @@ mod tests {
         let t = template_with_table("");
         let r = validate_template(&t);
         assert!(report_has(&r, "mj-table.content"));
+    }
+
+    #[test]
+    fn table_script_and_event_handler_are_errors() {
+        let script = template_with_table("<tr><td><script>alert(1)</script></td></tr>");
+        assert!(report_has(&validate_template(&script), "disallowed HTML"));
+        let handler = template_with_table("<tr><td onclick=\"alert(1)\">1</td></tr>");
+        assert!(report_has(&validate_template(&handler), "disallowed HTML"));
+    }
+
+    #[test]
+    fn css_markup_breakout_is_error() {
+        let mut t = Template::minimal();
+        t.head.css = "</style><script>alert(1)</script>".into();
+        let r = validate_template(&t);
+        assert!(report_has(&r, "head.css contains markup"));
+    }
+
+    #[test]
+    fn javascript_button_href_is_error() {
+        let t = template_with_button(MjButton {
+            content: "Go".into(),
+            href: "javascript:alert(1)".into(),
+            ..Default::default()
+        });
+        let r = validate_template(&t);
+        assert!(report_has(&r, "unsafe URL scheme"));
+        assert!(!r.ok());
     }
 
     #[test]

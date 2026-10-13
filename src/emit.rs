@@ -49,6 +49,9 @@ pub fn emit_mjml(t: &Template, mode: EmitMode) -> anyhow::Result<String> {
     );
     w.close("mj-style");
     if !t.head.css.trim().is_empty() {
+        if !css_is_safe(t.head.css.trim()) {
+            anyhow::bail!("head.css contains a forbidden sequence");
+        }
         if t.head.css_inline {
             w.open_attrs("mj-style", &[("inline", "inline".to_string())]);
         } else {
@@ -152,7 +155,11 @@ fn emit_json_ld_payload(raw: &str) -> anyhow::Result<Option<String>> {
         .map_err(|e| anyhow::anyhow!("head.json_ld is not valid JSON: {e}"))?;
     match value {
         serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
-            Ok(Some(serde_json::to_string_pretty(&value)?))
+            let pretty = serde_json::to_string_pretty(&value)?;
+            if contains_ci(&pretty, "</script") || contains_ci(&pretty, "</mj-") {
+                anyhow::bail!("head.json_ld contains a forbidden closer");
+            }
+            Ok(Some(pretty))
         }
         _ => anyhow::bail!("head.json_ld must be a JSON object or array"),
     }
@@ -414,7 +421,7 @@ fn emit_text(w: &mut Writer, n: &MjText) -> anyhow::Result<()> {
 }
 
 fn emit_button(w: &mut Writer, n: &MjButton) -> anyhow::Result<()> {
-    let mut attrs = vec![("href", xml_escape_attr(&n.href))];
+    let mut attrs = vec![("href", checked_href(&n.href)?)];
     push_opt(
         &mut attrs,
         "background-color",
@@ -453,7 +460,7 @@ fn emit_image(w: &mut Writer, t: &Template, mode: &EmitMode, n: &MjImage) -> any
         ("alt", xml_escape_attr(&n.alt)),
     ];
     if let Some(href) = n.href.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        attrs.push(("href", xml_escape_attr(href)));
+        attrs.push(("href", checked_href(href)?));
     }
     push_opt(&mut attrs, "width", n.width.as_deref());
     push_opt(&mut attrs, "height", n.height.as_deref());
@@ -515,16 +522,16 @@ fn emit_social(w: &mut Writer, n: &MjSocial) -> anyhow::Result<()> {
     push_opt(&mut attrs, "css-class", n.css_class.as_deref());
     w.open_attrs("mj-social", &attrs);
     for el in &n.elements {
-        emit_social_element(w, el);
+        emit_social_element(w, el)?;
     }
     w.close("mj-social");
     Ok(())
 }
 
-fn emit_social_element(w: &mut Writer, el: &MjSocialElement) {
+fn emit_social_element(w: &mut Writer, el: &MjSocialElement) -> anyhow::Result<()> {
     let mut attrs = vec![
         ("name", social_network_mjml(el.name).to_string()),
-        ("href", xml_escape_attr(&el.href)),
+        ("href", checked_href(&el.href)?),
     ];
     if let Some(src) = el.src.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         attrs.push(("src", xml_escape_attr(src)));
@@ -539,6 +546,7 @@ fn emit_social_element(w: &mut Writer, el: &MjSocialElement) {
     push_opt(&mut attrs, "alt", el.alt.as_deref());
     push_opt(&mut attrs, "css-class", el.css_class.as_deref());
     w.self_close("mj-social-element", &attrs);
+    Ok(())
 }
 
 fn social_network_mjml(n: SocialNetwork) -> &'static str {
@@ -568,6 +576,16 @@ fn emit_navbar(w: &mut Writer, n: &MjNavbar) -> anyhow::Result<()> {
     if n.hamburger {
         attrs.push(("hamburger", "hamburger".into()));
     }
+    if let Some(base) = n
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if !is_safe_link(base) {
+            anyhow::bail!("refusing navbar base-url with an unsafe scheme: {base}");
+        }
+    }
     push_opt(&mut attrs, "ico-color", n.ico_color.as_deref());
     push_opt(&mut attrs, "base-url", n.base_url.as_deref());
     push_align(&mut attrs, n.align);
@@ -582,14 +600,14 @@ fn emit_navbar(w: &mut Writer, n: &MjNavbar) -> anyhow::Result<()> {
     push_opt(&mut attrs, "css-class", n.css_class.as_deref());
     w.open_attrs("mj-navbar", &attrs);
     for link in &n.links {
-        emit_navbar_link(w, link);
+        emit_navbar_link(w, link)?;
     }
     w.close("mj-navbar");
     Ok(())
 }
 
-fn emit_navbar_link(w: &mut Writer, n: &MjNavbarLink) {
-    let mut attrs = vec![("href", xml_escape_attr(&n.href))];
+fn emit_navbar_link(w: &mut Writer, n: &MjNavbarLink) -> anyhow::Result<()> {
+    let mut attrs = vec![("href", checked_href(&n.href)?)];
     push_opt(&mut attrs, "color", n.color.as_deref());
     push_opt(&mut attrs, "font-family", n.font_family.as_deref());
     push_opt(&mut attrs, "font-size", n.font_size.as_deref());
@@ -601,6 +619,7 @@ fn emit_navbar_link(w: &mut Writer, n: &MjNavbarLink) {
     w.open_attrs("mj-navbar-link", &attrs);
     w.raw_indented(&xml_escape_text(&n.content));
     w.close("mj-navbar-link");
+    Ok(())
 }
 
 fn emit_accordion(w: &mut Writer, n: &MjAccordion) -> anyhow::Result<()> {
@@ -694,7 +713,7 @@ fn emit_carousel_image(
         ("alt", xml_escape_attr(&n.alt)),
     ];
     if let Some(href) = n.href.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        attrs.push(("href", xml_escape_attr(href)));
+        attrs.push(("href", checked_href(href)?));
     }
     if let Some(thumb) = n
         .thumbnails_src
@@ -728,11 +747,8 @@ fn emit_table(w: &mut Writer, n: &MjTable) -> anyhow::Result<()> {
     push_opt(&mut attrs, "role", n.role.as_deref());
     push_opt(&mut attrs, "css-class", n.css_class.as_deref());
     w.open_attrs("mj-table", &attrs);
-    let inner = if contains_ci(&n.content, "</mj-") {
-        xml_escape_text(&n.content)
-    } else {
-        n.content.trim().to_string()
-    };
+    let inner = allowlisted(n.content.trim(), TABLE_TAGS)
+        .unwrap_or_else(|| xml_escape_text(n.content.trim()));
     w.raw_indented(&inner);
     w.close("mj-table");
     Ok(())
@@ -766,7 +782,7 @@ fn emit_email_header(
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            img.push(("href", xml_escape_attr(href)));
+            img.push(("href", checked_href(href)?));
         }
         w.self_close("mj-image", &img);
     }
@@ -848,7 +864,7 @@ fn emit_email_cta(
         w.close("mj-text");
     }
     if !c.button_label.trim().is_empty() {
-        w.open_attrs("mj-button", &[("href", xml_escape_attr(&c.button_href))]);
+        w.open_attrs("mj-button", &[("href", checked_href(&c.button_href)?)]);
         w.raw_indented(&xml_escape_text(&c.button_label));
         w.close("mj-button");
     }
@@ -878,7 +894,7 @@ fn emit_email_article(
         w.close("mj-column");
         Ok(())
     };
-    let text_col = |w: &mut Writer, width: &str| {
+    let text_col = |w: &mut Writer, width: &str| -> anyhow::Result<()> {
         w.open_attrs("mj-column", &[("width", width.into())]);
         if !a.title.trim().is_empty() {
             w.open_attrs(
@@ -894,15 +910,16 @@ fn emit_email_article(
             w.close("mj-text");
         }
         if !a.link_label.trim().is_empty() {
-            w.open_attrs("mj-button", &[("href", xml_escape_attr(&a.link_href))]);
+            w.open_attrs("mj-button", &[("href", checked_href(&a.link_href)?)]);
             w.raw_indented(&xml_escape_text(&a.link_label));
             w.close("mj-button");
         }
         w.close("mj-column");
+        Ok(())
     };
 
     if !has_image {
-        text_col(w, "100%");
+        text_col(w, "100%")?;
     } else {
         match a.image_position {
             ImagePosition::Top => {
@@ -916,14 +933,14 @@ fn emit_email_article(
                     ],
                 );
                 w.close("mj-column");
-                text_col(w, "100%");
+                text_col(w, "100%")?;
             }
             ImagePosition::Left => {
                 image_col(w)?;
-                text_col(w, "50%");
+                text_col(w, "50%")?;
             }
             ImagePosition::Right => {
-                text_col(w, "50%");
+                text_col(w, "50%")?;
                 image_col(w)?;
             }
         }
@@ -944,7 +961,7 @@ fn emit_email_footer(
     if !f.social.is_empty() {
         w.open_attrs("mj-social", &[("mode", "horizontal".into())]);
         for el in &f.social {
-            emit_social_element(w, el);
+            emit_social_element(w, el)?;
         }
         w.close("mj-social");
     }
@@ -965,7 +982,7 @@ fn emit_email_footer(
         };
         lines.push(format!(
             "<a href=\"{}\">{}</a>",
-            xml_escape_attr(&f.unsubscribe_href),
+            checked_href(&f.unsubscribe_href)?,
             xml_escape_text(label)
         ));
     }
@@ -1167,13 +1184,55 @@ fn contains_ci(hay: &str, needle: &str) -> bool {
         .contains(&needle.to_ascii_lowercase())
 }
 
-fn emit_text_inner(content: &str) -> String {
-    try_allowlisted(content).unwrap_or_else(|| xml_escape_text(content))
+fn css_is_safe(css: &str) -> bool {
+    let lower = css.to_ascii_lowercase();
+    !lower.contains('<')
+        && !lower.contains("@import")
+        && !lower.contains("javascript:")
+        && !lower.contains("expression(")
 }
 
-const ALLOWED_TAGS: &[&str] = &["br", "a", "b", "strong", "em", "span", "u"];
+/// Link schemes that execute script or read local files. Merge tags
+/// (`*|UNSUB|*`, `{{url}}`) and normal http(s)/mailto/tel links stay allowed.
+pub(crate) fn is_safe_link(href: &str) -> bool {
+    let v = href.trim();
+    if v.is_empty() {
+        return true;
+    }
+    if v.chars().any(|c| c.is_control()) {
+        return false;
+    }
+    let compact: String = v
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(|c| c.to_lowercase())
+        .collect();
+    const BAD: &[&str] = &["javascript:", "data:", "vbscript:", "file:", "blob:"];
+    !BAD.iter().any(|prefix| compact.starts_with(prefix))
+}
 
-fn try_allowlisted(s: &str) -> Option<String> {
+fn checked_href(href: &str) -> anyhow::Result<String> {
+    if !is_safe_link(href) {
+        anyhow::bail!("refusing link with an unsafe scheme: {href}");
+    }
+    Ok(xml_escape_attr(href))
+}
+
+fn emit_text_inner(content: &str) -> String {
+    allowlisted(content, TEXT_TAGS).unwrap_or_else(|| xml_escape_text(content))
+}
+
+const TEXT_TAGS: &[&str] = &["br", "a", "b", "strong", "em", "span", "u"];
+const TABLE_TAGS: &[&str] = &[
+    "table", "thead", "tbody", "tfoot", "tr", "td", "th", "br", "a", "b", "strong", "em", "span",
+    "u",
+];
+
+pub(crate) fn table_markup_is_safe(content: &str) -> bool {
+    allowlisted(content.trim(), TABLE_TAGS).is_some()
+}
+
+fn allowlisted(s: &str, tags: &[&str]) -> Option<String> {
     let mut out = String::new();
     let mut rest = s;
     let mut stack: Vec<String> = Vec::new();
@@ -1191,10 +1250,13 @@ fn try_allowlisted(s: &str) -> Option<String> {
                 }
                 let (name, attrs) = split_name_attrs(body)?;
                 let name_l = name.to_ascii_lowercase();
-                if !ALLOWED_TAGS.contains(&name_l.as_str()) {
+                if !tags.contains(&name_l.as_str()) {
                     return None;
                 }
                 if closing {
+                    if !attrs.is_empty() {
+                        return None;
+                    }
                     let last = stack.pop()?;
                     if last != name_l {
                         return None;
@@ -1203,9 +1265,20 @@ fn try_allowlisted(s: &str) -> Option<String> {
                     out.push_str(&name_l);
                     out.push('>');
                 } else {
+                    let mut rendered = String::new();
+                    for (key, val) in &attrs {
+                        if !attr_allowed(&name_l, key, val) {
+                            return None;
+                        }
+                        rendered.push(' ');
+                        rendered.push_str(&key.to_ascii_lowercase());
+                        rendered.push_str("=\"");
+                        rendered.push_str(&xml_escape_attr(val));
+                        rendered.push('"');
+                    }
                     out.push('<');
                     out.push_str(&name_l);
-                    out.push_str(&attrs?);
+                    out.push_str(&rendered);
                     if self_close || name_l == "br" {
                         out.push_str(" />");
                     } else {
@@ -1225,10 +1298,33 @@ fn try_allowlisted(s: &str) -> Option<String> {
     if stack.is_empty() { Some(out) } else { None }
 }
 
-fn split_name_attrs(body: &str) -> Option<(String, Option<String>)> {
-    let mut chars = body.char_indices();
+fn attr_allowed(tag: &str, key: &str, val: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    if key.starts_with("on") {
+        return false;
+    }
+    match (tag, key.as_str()) {
+        ("a", "href") => is_safe_link(val),
+        ("a", "title") => plain_attr(val),
+        ("td" | "th", "colspan" | "rowspan" | "align" | "valign" | "width" | "height") => {
+            plain_attr(val)
+        }
+        ("tr", "align" | "valign") => plain_attr(val),
+        ("table", "width" | "border" | "cellpadding" | "cellspacing" | "role" | "align") => {
+            plain_attr(val)
+        }
+        _ => false,
+    }
+}
+
+fn plain_attr(val: &str) -> bool {
+    !val.chars()
+        .any(|c| c.is_control() || matches!(c, '<' | '>' | '"' | '\''))
+}
+
+fn split_name_attrs(body: &str) -> Option<(String, Vec<(String, String)>)> {
     let mut name_end = body.len();
-    for (i, c) in chars.by_ref() {
+    for (i, c) in body.char_indices() {
         if c.is_whitespace() {
             name_end = i;
             break;
@@ -1238,12 +1334,11 @@ fn split_name_attrs(body: &str) -> Option<(String, Option<String>)> {
         }
     }
     let name = body[..name_end].to_string();
-    let rest = body[name_end..].trim();
-    if rest.is_empty() {
-        return Some((name, Some(String::new())));
+    let mut r = body[name_end..].trim();
+    if r.is_empty() {
+        return Some((name, Vec::new()));
     }
-    let mut attrs = String::new();
-    let mut r = rest;
+    let mut attrs = Vec::new();
     while !r.is_empty() {
         let eq = r.find('=')?;
         let key = r[..eq].trim();
@@ -1257,15 +1352,11 @@ fn split_name_attrs(body: &str) -> Option<(String, Option<String>)> {
         }
         r = &r[1..];
         let end = r.find(quote)?;
-        let val = &r[..end];
+        let val = r[..end].to_string();
         r = r[end + 1..].trim_start();
-        attrs.push(' ');
-        attrs.push_str(key);
-        attrs.push_str("=\"");
-        attrs.push_str(&xml_escape_attr(val));
-        attrs.push('"');
+        attrs.push((key.to_string(), val));
     }
-    Some((name, Some(attrs)))
+    Some((name, attrs))
 }
 
 struct Writer {
@@ -1752,6 +1843,50 @@ mod tests {
         assert_eq!(emit_text_inner("Hello & Co"), "Hello &amp; Co");
         assert_eq!(emit_text_inner("<b>Hi</b>"), "<b>Hi</b>");
         assert_eq!(emit_text_inner("<script>"), "&lt;script&gt;");
+        assert_eq!(
+            emit_text_inner("<a href=\"https://example.com\">x</a>"),
+            "<a href=\"https://example.com\">x</a>"
+        );
+        assert_eq!(
+            emit_text_inner("<a href=\"javascript:alert(1)\">x</a>"),
+            "&lt;a href=&quot;javascript:alert(1)&quot;&gt;x&lt;/a&gt;"
+        );
+        assert_eq!(
+            emit_text_inner("<b onclick=\"alert(1)\">x</b>"),
+            "&lt;b onclick=&quot;alert(1)&quot;&gt;x&lt;/b&gt;"
+        );
+        assert!(emit_text_inner("<span onfocus=\"alert(1)\" autofocus>x</span>").contains("&lt;"));
+        assert!(table_markup_is_safe("<tr><td colspan=\"2\">1</td></tr>"));
+        assert!(!table_markup_is_safe(
+            "<tr><td><script>alert(1)</script></td></tr>"
+        ));
+        assert!(!table_markup_is_safe(
+            "<tr><td onclick=\"alert(1)\">1</td></tr>"
+        ));
+        assert!(!is_safe_link("javascript:alert(1)"));
+        assert!(!is_safe_link("java\nscript:alert(1)"));
+        assert!(is_safe_link("*|UNSUB|*"));
+        assert!(is_safe_link("mailto:a@example.com"));
+        assert!(css_is_safe("a > b { color: red; }"));
+        assert!(!css_is_safe("</style><script>alert(1)</script>"));
+        let mut bad_css = Template::minimal();
+        bad_css.head.css = "</style><script>alert(1)</script>".into();
+        assert!(emit_mjml(&bad_css, EmitMode::Export).is_err());
+        let mut bad_table = Template::minimal();
+        bad_table.preheader.clear();
+        bad_table.body.nodes.push(BodyNode::MjSection(MjSection {
+            children: vec![SectionChild::MjColumn(MjColumn {
+                components: vec![ColumnChild::MjTable(MjTable {
+                    content: "<tr><td><script>alert(1)</script></td></tr>".into(),
+                    ..Default::default()
+                })],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        let mjml = export(&bad_table);
+        assert!(!mjml.contains("<script>"), "{mjml}");
+        assert!(mjml.contains("&lt;script&gt;"), "{mjml}");
         let escaped = emit_text_inner("</mj-text>oops");
         assert_eq!(escaped, "&lt;/mj-text&gt;oops");
         assert_eq!(escaped.matches("</mj-text>").count(), 0);
