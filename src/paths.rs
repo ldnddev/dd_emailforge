@@ -38,6 +38,18 @@ pub fn last_template_file_from(config: &Path) -> PathBuf {
     config.join("dd_emailforge").join("last_path")
 }
 
+/// Canonical path of `candidate` when it exists and stays inside canonical `root`.
+/// Symlinks are resolved, so a link that points outside `root` is rejected.
+pub fn resolved_path_within(root: &Path, candidate: &Path) -> Option<PathBuf> {
+    let root = root.canonicalize().ok()?;
+    let path = candidate.canonicalize().ok()?;
+    if path.starts_with(&root) {
+        Some(path)
+    } else {
+        None
+    }
+}
+
 /// Ordered (path, source-label) pairs. First existing valid `version: 1` file wins.
 pub fn theme_candidates() -> Vec<(PathBuf, &'static str)> {
     theme_candidates_from(
@@ -129,6 +141,25 @@ mod tests {
             Some(OsString::from("/home/user")),
         );
         assert_eq!(dir, PathBuf::from("/tmp/xdg-config/ldnddev"));
+    }
+
+    #[test]
+    fn resolved_path_rejects_symlink_escape() {
+        let n = std::process::id();
+        let dir = std::env::temp_dir().join(format!("dd_emailforge_paths_{n}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("images")).unwrap();
+        let secret = dir.join("secret.txt");
+        std::fs::write(&secret, b"nope").unwrap();
+        std::fs::write(dir.join("images/ok.txt"), b"ok").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&secret, dir.join("images/leak.txt")).unwrap();
+        let images = dir.join("images");
+        assert!(resolved_path_within(&images, &images.join("ok.txt")).is_some());
+        #[cfg(unix)]
+        assert!(resolved_path_within(&images, &images.join("leak.txt")).is_none());
+        assert!(resolved_path_within(&dir, &dir.join("images/../../etc/passwd")).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

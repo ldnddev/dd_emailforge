@@ -1154,13 +1154,29 @@ fn check_image_src(
 }
 
 fn local_image_exists(root: &Path, src: &str) -> bool {
-    let rel = src.trim_start_matches('/');
+    let rel = src.trim().trim_start_matches('/');
+    let rel_path = Path::new(rel);
+    if rel.is_empty()
+        || rel_path.is_absolute()
+        || rel_path.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        return false;
+    }
     let candidates = if rel.starts_with("images/") {
-        vec![root.join(rel)]
+        vec![root.join(rel_path)]
     } else {
-        vec![root.join("images").join(rel), root.join(rel)]
+        vec![root.join("images").join(rel_path), root.join(rel_path)]
     };
-    candidates.iter().any(|p| p.is_file())
+    candidates.iter().any(|p| {
+        crate::paths::resolved_path_within(root, p).is_some_and(|resolved| resolved.is_file())
+    })
 }
 
 /// `mj-table` already emits `<table>`. Inner content must be row markup

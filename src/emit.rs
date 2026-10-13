@@ -1096,10 +1096,24 @@ pub(crate) fn rewrite_src(src: &str, t: &Template, mode: &EmitMode) -> anyhow::R
     if lower.starts_with("http://") {
         anyhow::bail!("insecure image URL: {s}");
     }
+    let rel = s.trim_start_matches('/');
+    let rel_path = std::path::Path::new(rel);
+    if rel.is_empty()
+        || rel_path.is_absolute()
+        || rel_path.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        anyhow::bail!("image path escapes the template directory: {s}");
+    }
     match mode {
         EmitMode::Preview { origin } => {
             let origin = origin.trim_end_matches('/');
-            let rel = s.trim_start_matches('/');
             let rel = if rel.starts_with("images/") {
                 rel.to_string()
             } else {
@@ -1115,7 +1129,7 @@ pub(crate) fn rewrite_src(src: &str, t: &Template, mode: &EmitMode) -> anyhow::R
             if !base.ends_with('/') {
                 base.push('/');
             }
-            Ok(format!("{base}{}", s.trim_start_matches('/')))
+            Ok(format!("{base}{rel}"))
         }
     }
 }
@@ -1400,6 +1414,7 @@ mod tests {
             rewrite_src("images/a.png", &t, &EmitMode::Export).unwrap(),
             "https://cdn.example.com/images/a.png"
         );
+        assert!(rewrite_src("images/../../.ssh/id_rsa", &t, &preview).is_err());
     }
 
     #[test]

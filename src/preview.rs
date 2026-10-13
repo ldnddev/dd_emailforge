@@ -78,6 +78,11 @@ impl PreviewSession {
     }
 }
 
+const CSP_WRAPPER: &str = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const CSP_COMPILED: &str = "default-src 'none'; img-src 'self' https: data:; style-src 'unsafe-inline'; font-src https://fonts.gstatic.com https://fonts.googleapis.com data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+const CSP_ASSET: &str = "default-src 'none'; script-src 'none'; style-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const CSP_DATA: &str = "default-src 'none'; frame-ancestors 'none'";
+
 fn handle_client(mut stream: TcpStream, state: &HttpState) -> std::io::Result<()> {
     let mut buf = [0u8; 4096];
     let n = stream.read(&mut buf)?;
@@ -85,15 +90,99 @@ fn handle_client(mut stream: TcpStream, state: &HttpState) -> std::io::Result<()
         return Ok(());
     }
     let req = String::from_utf8_lossy(&buf[..n]);
-    let path = parse_path(&req).unwrap_or("/");
-    let (status, body, ctype) = route(path, state);
+    if !host_is_loopback(&req) {
+        return write_response(
+            &mut stream,
+            "400 Bad Request",
+            b"Bad Request",
+            "text/plain; charset=utf-8",
+            CSP_DATA,
+        );
+    }
+    let Some(path) = parse_path(&req).and_then(percent_decode) else {
+        return write_response(
+            &mut stream,
+            "400 Bad Request",
+            b"Bad Request",
+            "text/plain; charset=utf-8",
+            CSP_DATA,
+        );
+    };
+    let (status, body, ctype, csp) = route(&path, state);
+    write_response(&mut stream, status, &body, ctype, csp)
+}
+
+fn write_response(
+    stream: &mut TcpStream,
+    status: &str,
+    body: &[u8],
+    ctype: &str,
+    csp: &str,
+) -> std::io::Result<()> {
     let header = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: {csp}\r\nConnection: close\r\n\r\n",
         body.len()
     );
     stream.write_all(header.as_bytes())?;
-    stream.write_all(&body)?;
+    stream.write_all(body)?;
     Ok(())
+}
+
+/// HTTP/1.1 Host must be the loopback name the server bound. A foreign Host is
+/// how a DNS-rebinding page reads a predictable preview port from the browser.
+fn host_is_loopback(req: &str) -> bool {
+    let mut saw = false;
+    for line in req.lines().skip(1) {
+        if line.is_empty() {
+            break;
+        }
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if !name.eq_ignore_ascii_case("host") {
+            continue;
+        }
+        saw = true;
+        let host = value.trim();
+        let hostname = host.split(':').next().unwrap_or(host).trim();
+        if hostname != "127.0.0.1" && !hostname.eq_ignore_ascii_case("localhost") {
+            return false;
+        }
+    }
+    saw
+}
+
+fn percent_decode(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                return None;
+            }
+            let hi = hex_nibble(bytes[i + 1])?;
+            let lo = hex_nibble(bytes[i + 2])?;
+            out.push((hi << 4) | lo);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    if out.contains(&0) {
+        return None;
+    }
+    String::from_utf8(out).ok()
+}
+
+fn hex_nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn parse_path(req: &str) -> Option<&str> {
@@ -107,13 +196,9 @@ fn parse_path(req: &str) -> Option<&str> {
     Some(target.split('?').next().unwrap_or(target))
 }
 
-fn route(path: &str, state: &HttpState) -> (&'static str, Vec<u8>, &'static str) {
+fn route(path: &str, state: &HttpState) -> (&'static str, Vec<u8>, &'static str, &'static str) {
     if path.components_parent() {
-        return (
-            "404 Not Found",
-            b"Not Found".to_vec(),
-            "text/plain; charset=utf-8",
-        );
+        return not_found();
     }
     match path {
         "/" => {
@@ -125,16 +210,18 @@ fn route(path: &str, state: &HttpState) -> (&'static str, Vec<u8>, &'static str)
                 "200 OK",
                 wrapper_html(&meta).into_bytes(),
                 "text/html; charset=utf-8",
+                CSP_WRAPPER,
             )
         }
         "/compiled.html" => {
             if let Ok(bytes) = std::fs::read(&state.compiled) {
-                ("200 OK", bytes, "text/html; charset=utf-8")
+                ("200 OK", bytes, "text/html; charset=utf-8", CSP_COMPILED)
             } else {
                 (
                     "200 OK",
                     b"<!doctype html><title>compiling</title><p>compiling...</p>".to_vec(),
                     "text/html; charset=utf-8",
+                    CSP_COMPILED,
                 )
             }
         }
@@ -149,6 +236,7 @@ fn route(path: &str, state: &HttpState) -> (&'static str, Vec<u8>, &'static str)
                 "200 OK",
                 secs.to_string().into_bytes(),
                 "text/plain; charset=utf-8",
+                CSP_DATA,
             )
         }
         "/__meta" => {
@@ -157,15 +245,20 @@ fn route(path: &str, state: &HttpState) -> (&'static str, Vec<u8>, &'static str)
                 preheader: String::new(),
             });
             let json = serde_json::to_string(&meta).unwrap_or_else(|_| "{}".into());
-            ("200 OK", json.into_bytes(), "application/json")
+            ("200 OK", json.into_bytes(), "application/json", CSP_DATA)
         }
         p if p.starts_with("/images/") => serve_image(&state.template_root, p),
-        _ => (
-            "404 Not Found",
-            b"Not Found".to_vec(),
-            "text/plain; charset=utf-8",
-        ),
+        _ => not_found(),
     }
+}
+
+fn not_found() -> (&'static str, Vec<u8>, &'static str, &'static str) {
+    (
+        "404 Not Found",
+        b"Not Found".to_vec(),
+        "text/plain; charset=utf-8",
+        CSP_DATA,
+    )
 }
 
 trait ParentDirCheck {
@@ -180,26 +273,34 @@ impl ParentDirCheck for str {
     }
 }
 
-fn serve_image(root: &Path, url_path: &str) -> (&'static str, Vec<u8>, &'static str) {
-    let rel = PathBuf::from(url_path.trim_start_matches('/'));
-    if rel
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return (
-            "404 Not Found",
-            b"Not Found".to_vec(),
-            "text/plain; charset=utf-8",
-        );
+fn serve_image(root: &Path, url_path: &str) -> (&'static str, Vec<u8>, &'static str, &'static str) {
+    let rel = url_path.trim_start_matches('/');
+    let rel_path = Path::new(rel);
+    // Only plain path segments. Parent, current, root, and prefix components
+    // are rejected before the filesystem is touched.
+    let normal = rel.starts_with("images/")
+        && rel_path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+    if !normal {
+        return not_found();
     }
-    let candidate = root.join(&rel);
-    match std::fs::read(&candidate) {
-        Ok(bytes) => ("200 OK", bytes, mime_for(&candidate)),
-        Err(_) => (
-            "404 Not Found",
-            b"Not Found".to_vec(),
-            "text/plain; charset=utf-8",
-        ),
+    let images = root.join("images");
+    // `images/` itself must stay inside the template root (a symlink of the
+    // directory to `/` would otherwise become the confinement root).
+    let Some(images_root) = crate::paths::resolved_path_within(root, &images) else {
+        return not_found();
+    };
+    let candidate = root.join(rel_path);
+    let Some(resolved) = crate::paths::resolved_path_within(root, &candidate) else {
+        return not_found();
+    };
+    if !resolved.starts_with(&images_root) || !resolved.is_file() {
+        return not_found();
+    }
+    match std::fs::read(&resolved) {
+        Ok(bytes) => ("200 OK", bytes, mime_for(&resolved), CSP_ASSET),
+        Err(_) => not_found(),
     }
 }
 
@@ -266,11 +367,11 @@ pub fn wrapper_html(meta: &PreviewMeta) -> String {
 </header>
 <div class="canvases">
   <figure>
-    <iframe id="desk" src="/compiled.html" width="600"></iframe>
+    <iframe id="desk" src="/compiled.html" width="600" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>
     <figcaption>600px</figcaption>
   </figure>
   <figure>
-    <iframe id="mob" src="/compiled.html" width="320"></iframe>
+    <iframe id="mob" src="/compiled.html" width="320" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>
     <figcaption>320px</figcaption>
   </figure>
 </div>
@@ -425,6 +526,52 @@ mod tests {
         let denied = http_get(port, "/../Cargo.toml");
         assert!(denied.contains("Not Found") || denied.contains("404"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_and_encoded_dotdot_are_not_served() {
+        let dir = temp_dir();
+        let secret = dir.join("secret.txt");
+        std::fs::write(&secret, b"topsecret").unwrap();
+        let images = dir.join("images");
+        std::fs::create_dir_all(&images).unwrap();
+        std::fs::write(images.join("ok.txt"), b"visible").unwrap();
+        std::os::unix::fs::symlink(&secret, images.join("leak.txt")).unwrap();
+        let compiled = dir.join(".preview/template.html");
+        std::fs::create_dir_all(compiled.parent().unwrap()).unwrap();
+        std::fs::write(&compiled, b"<p>hi</p>").unwrap();
+        let meta = Arc::new(Mutex::new(PreviewMeta {
+            subject: "s".into(),
+            preheader: String::new(),
+        }));
+        let (port, _h) = start_http(dir.clone(), compiled, meta, "127.0.0.1:0").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let leaked = http_get(port, "/images/leak.txt");
+        assert!(leaked.contains("404") || leaked.contains("Not Found"));
+        assert!(!leaked.contains("topsecret"));
+        let encoded = http_get(port, "/images/%2e%2e/secret.txt");
+        assert!(encoded.contains("404") || encoded.contains("Not Found"));
+        assert!(!encoded.contains("topsecret"));
+        let ok = http_get(port, "/images/ok.txt");
+        assert!(ok.contains("visible"));
+        let foreign = http_get_host(port, "/images/ok.txt", "evil.example");
+        assert!(foreign.starts_with("HTTP/1.1 400"));
+        assert!(!foreign.contains("visible"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn http_get_host(port: u16, path: &str, host: &str) -> String {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        stream
+            .write_all(
+                format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n")
+                    .as_bytes(),
+            )
+            .unwrap();
+        let mut buf = String::new();
+        stream.read_to_string(&mut buf).unwrap();
+        buf
     }
 
     #[test]
