@@ -313,20 +313,35 @@ install_prebuilt_into() {
     return 0
 }
 
+# install_prebuilt_into calls `exit` when the checksum or archive is bad, so
+# this has to be global: a local would already be gone when the EXIT trap runs.
+PREBUILT_TMP=""
+
+cleanup_prebuilt_tmp() {
+    if [ -n "${PREBUILT_TMP:-}" ]; then
+        rm -rf "$PREBUILT_TMP"
+        PREBUILT_TMP=""
+    fi
+}
+
 # Returns 0 if a matching GitHub Release archive was downloaded and installed.
+# A missing archive returns 1 so auto mode can build from source. A bad
+# checksum or archive still exits 1, and the download directory is removed.
 try_install_prebuilt() {
     require curl
     require tar
     require mktemp
     require uname
 
-    local tmp
-    tmp="$(mktemp -d)"
-    if install_prebuilt_into "$tmp"; then
-        rm -rf "$tmp"
+    PREBUILT_TMP="$(mktemp -d)"
+    trap cleanup_prebuilt_tmp EXIT
+    if install_prebuilt_into "$PREBUILT_TMP"; then
+        cleanup_prebuilt_tmp
+        trap - EXIT
         return 0
     fi
-    rm -rf "$tmp"
+    cleanup_prebuilt_tmp
+    trap - EXIT
     return 1
 }
 
