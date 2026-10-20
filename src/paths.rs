@@ -30,6 +30,7 @@ pub fn library_dir() -> PathBuf {
 }
 
 /// One-line file holding the last opened `template.json` path.
+#[allow(dead_code)]
 pub fn last_template_file() -> PathBuf {
     last_template_file_from(&config_dir())
 }
