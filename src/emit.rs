@@ -391,10 +391,10 @@ fn emit_column_child(
         ColumnChild::MjImage(n) => emit_image(w, t, mode, n),
         ColumnChild::MjDivider(n) => emit_divider(w, n),
         ColumnChild::MjSpacer(n) => emit_spacer(w, n),
-        ColumnChild::MjSocial(n) => emit_social(w, n),
+        ColumnChild::MjSocial(n) => emit_social(w, t, mode, n),
         ColumnChild::MjTable(n) => emit_table(w, n),
         ColumnChild::MjNavbar(n) => emit_navbar(w, n),
-        ColumnChild::MjAccordion(n) => emit_accordion(w, n),
+        ColumnChild::MjAccordion(n) => emit_accordion(w, t, mode, n),
         ColumnChild::MjCarousel(n) => emit_carousel(w, t, mode, n),
     }
 }
@@ -500,7 +500,7 @@ fn emit_spacer(w: &mut Writer, n: &MjSpacer) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn emit_social(w: &mut Writer, n: &MjSocial) -> anyhow::Result<()> {
+fn emit_social(w: &mut Writer, t: &Template, mode: &EmitMode, n: &MjSocial) -> anyhow::Result<()> {
     let mut attrs = vec![(
         "mode",
         match n.mode {
@@ -522,20 +522,23 @@ fn emit_social(w: &mut Writer, n: &MjSocial) -> anyhow::Result<()> {
     push_opt(&mut attrs, "css-class", n.css_class.as_deref());
     w.open_attrs("mj-social", &attrs);
     for el in &n.elements {
-        emit_social_element(w, el)?;
+        emit_social_element(w, t, mode, el)?;
     }
     w.close("mj-social");
     Ok(())
 }
 
-fn emit_social_element(w: &mut Writer, el: &MjSocialElement) -> anyhow::Result<()> {
+fn emit_social_element(
+    w: &mut Writer,
+    t: &Template,
+    mode: &EmitMode,
+    el: &MjSocialElement,
+) -> anyhow::Result<()> {
     let mut attrs = vec![
         ("name", social_network_mjml(el.name).to_string()),
         ("href", checked_href(&el.href)?),
     ];
-    if let Some(src) = el.src.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        attrs.push(("src", xml_escape_attr(src)));
-    }
+    push_image_url(&mut attrs, "src", el.src.as_deref(), t, mode)?;
     push_opt(
         &mut attrs,
         "background-color",
@@ -622,7 +625,12 @@ fn emit_navbar_link(w: &mut Writer, n: &MjNavbarLink) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn emit_accordion(w: &mut Writer, n: &MjAccordion) -> anyhow::Result<()> {
+fn emit_accordion(
+    w: &mut Writer,
+    t: &Template,
+    mode: &EmitMode,
+    n: &MjAccordion,
+) -> anyhow::Result<()> {
     let mut attrs = Vec::new();
     push_opt(&mut attrs, "border", n.border.as_deref());
     push_padding(&mut attrs, n.padding.as_deref());
@@ -630,16 +638,20 @@ fn emit_accordion(w: &mut Writer, n: &MjAccordion) -> anyhow::Result<()> {
     push_opt(&mut attrs, "icon-position", n.icon_position.as_deref());
     push_opt(&mut attrs, "icon-width", n.icon_width.as_deref());
     push_opt(&mut attrs, "icon-height", n.icon_height.as_deref());
-    push_opt(
+    push_image_url(
         &mut attrs,
         "icon-wrapped-url",
         n.icon_wrapped_url.as_deref(),
-    );
-    push_opt(
+        t,
+        mode,
+    )?;
+    push_image_url(
         &mut attrs,
         "icon-unwrapped-url",
         n.icon_unwrapped_url.as_deref(),
-    );
+        t,
+        mode,
+    )?;
     push_opt(&mut attrs, "css-class", n.css_class.as_deref());
     w.open_attrs("mj-accordion", &attrs);
     for el in &n.elements {
@@ -952,7 +964,7 @@ fn emit_email_article(
 fn emit_email_footer(
     w: &mut Writer,
     t: &Template,
-    _mode: &EmitMode,
+    mode: &EmitMode,
     f: &EmailFooter,
 ) -> anyhow::Result<()> {
     w.open("mj-section");
@@ -961,7 +973,7 @@ fn emit_email_footer(
     if !f.social.is_empty() {
         w.open_attrs("mj-social", &[("mode", "horizontal".into())]);
         for el in &f.social {
-            emit_social_element(w, el)?;
+            emit_social_element(w, t, mode, el)?;
         }
         w.close("mj-social");
     }
@@ -1054,6 +1066,19 @@ fn push_padding_named(
     }
 }
 
+fn push_image_url(
+    attrs: &mut Vec<(&'static str, String)>,
+    key: &'static str,
+    url: Option<&str>,
+    t: &Template,
+    mode: &EmitMode,
+) -> anyhow::Result<()> {
+    if let Some(url) = url.map(str::trim).filter(|s| !s.is_empty()) {
+        attrs.push((key, xml_escape_attr(&rewrite_src(url, t, mode)?)));
+    }
+    Ok(())
+}
+
 fn push_bg_url(
     attrs: &mut Vec<(&'static str, String)>,
     url: Option<&str>,
@@ -1104,7 +1129,9 @@ pub(crate) fn rewrite_src(src: &str, t: &Template, mode: &EmitMode) -> anyhow::R
     if lower.starts_with("https://") {
         return Ok(s.to_string());
     }
-    if lower.starts_with("http://127.0.0.1:") || lower.starts_with("http://localhost:") {
+    // Host must actually be loopback. A prefix check accepts
+    // `http://127.0.0.1:1@evil.example/x.png` (userinfo, real host elsewhere).
+    if is_http_loopback(s) {
         return match mode {
             EmitMode::Preview { .. } => Ok(s.to_string()),
             EmitMode::Export => anyhow::bail!("loopback image URL not allowed in export: {s}"),
@@ -1112,6 +1139,9 @@ pub(crate) fn rewrite_src(src: &str, t: &Template, mode: &EmitMode) -> anyhow::R
     }
     if lower.starts_with("http://") {
         anyhow::bail!("insecure image URL: {s}");
+    }
+    if unsupported_image_scheme(s) {
+        anyhow::bail!("unsupported image URL scheme: {s}");
     }
     let rel = s.trim_start_matches('/');
     let rel_path = std::path::Path::new(rel);
@@ -1128,26 +1158,92 @@ pub(crate) fn rewrite_src(src: &str, t: &Template, mode: &EmitMode) -> anyhow::R
     {
         anyhow::bail!("image path escapes the template directory: {s}");
     }
+    // Bare names live in images/, matching preview URLs and the image picker.
+    let rel = if rel.starts_with("images/") {
+        rel.to_string()
+    } else {
+        format!("images/{rel}")
+    };
     match mode {
         EmitMode::Preview { origin } => {
             let origin = origin.trim_end_matches('/');
-            let rel = if rel.starts_with("images/") {
-                rel.to_string()
-            } else {
-                format!("images/{rel}")
-            };
             Ok(format!("{origin}/{rel}"))
         }
         EmitMode::Export => {
-            if t.base_url.trim().is_empty() {
+            let base_raw = t.base_url.trim();
+            if base_raw.is_empty() {
                 anyhow::bail!("relative image '{s}' requires base_url");
             }
-            let mut base = t.base_url.trim().to_string();
+            if !base_raw.to_ascii_lowercase().starts_with("https://") {
+                anyhow::bail!("relative image '{s}' requires an https:// base_url");
+            }
+            let mut base = base_raw.to_string();
             if !base.ends_with('/') {
                 base.push('/');
             }
             Ok(format!("{base}{rel}"))
         }
+    }
+}
+
+/// `http://127.0.0.1`, `http://localhost`, or `http://[::1]`, with an optional
+/// numeric port. Userinfo (`@`) and backslash hosts are not loopback.
+pub(crate) fn is_http_loopback(url: &str) -> bool {
+    let url = url.trim();
+    let Some(rest) = strip_ascii_prefix(url, "http://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.is_empty() || authority.contains('@') || authority.contains('\\') {
+        return false;
+    }
+    let host = if let Some(inner) = authority.strip_prefix('[') {
+        let Some(end) = inner.find(']') else {
+            return false;
+        };
+        let host = &inner[..end];
+        let after = &inner[end + 1..];
+        if !after.is_empty() {
+            let Some(port) = after.strip_prefix(':') else {
+                return false;
+            };
+            if !is_numeric_port(port) {
+                return false;
+            }
+        }
+        host
+    } else if let Some((host, port)) = authority.rsplit_once(':') {
+        if host.is_empty() || host.contains(':') || !is_numeric_port(port) {
+            return false;
+        }
+        host
+    } else {
+        authority
+    };
+    host == "127.0.0.1" || host.eq_ignore_ascii_case("localhost") || host == "::1"
+}
+
+/// A scheme other than the http(s) forms already handled (`javascript:`, `file:`, …).
+pub(crate) fn unsupported_image_scheme(src: &str) -> bool {
+    let s = src.trim();
+    let lower = s.to_ascii_lowercase();
+    if lower.starts_with("https://") || lower.starts_with("http://") {
+        return false;
+    }
+    s.split(['/', '?', '#'])
+        .next()
+        .is_some_and(|head| head.contains(':'))
+}
+
+fn is_numeric_port(port: &str) -> bool {
+    !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn strip_ascii_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+    if value.len() >= prefix.len() && value[..prefix.len()].eq_ignore_ascii_case(prefix) {
+        Some(&value[prefix.len()..])
+    } else {
+        None
     }
 }
 
@@ -1186,10 +1282,44 @@ fn contains_ci(hay: &str, needle: &str) -> bool {
 
 fn css_is_safe(css: &str) -> bool {
     let lower = css.to_ascii_lowercase();
-    !lower.contains('<')
-        && !lower.contains("@import")
-        && !lower.contains("javascript:")
-        && !lower.contains("expression(")
+    if lower.contains('<')
+        || lower.contains("@import")
+        || lower.contains("javascript:")
+        || lower.contains("expression(")
+    {
+        return false;
+    }
+    css_url_values(css)
+        .iter()
+        .all(|url| url.starts_with("https://fonts.googleapis.com/"))
+}
+
+/// `url(...)` values, including `url (` with whitespace before the parenthesis.
+pub(crate) fn css_url_values(css: &str) -> Vec<String> {
+    let lower = css.to_ascii_lowercase();
+    let mut out = Vec::new();
+    let mut search = 0;
+    while search < lower.len() {
+        let Some(rel) = lower[search..].find("url") else {
+            break;
+        };
+        let after = search + rel + 3;
+        if after > css.len() {
+            break;
+        }
+        let rest = &css[after..];
+        let trimmed = rest.trim_start();
+        if let Some(inner) = trimmed.strip_prefix('(') {
+            let end = inner.find(')').unwrap_or(inner.len());
+            let raw = inner[..end].trim().trim_matches(['\'', '"']);
+            out.push(raw.to_string());
+            let consumed = (rest.len() - trimmed.len()) + 1 + end;
+            search = after + consumed;
+        } else {
+            search = after;
+        }
+    }
+    out
 }
 
 /// Link schemes that execute script or read local files. Merge tags
@@ -1202,13 +1332,83 @@ pub(crate) fn is_safe_link(href: &str) -> bool {
     if v.chars().any(|c| c.is_control()) {
         return false;
     }
-    let compact: String = v
+    // Browsers decode character references in attributes before reading the
+    // scheme, so `java&#115;cript:` and `javascript&colon;` are script URLs.
+    let decoded = decode_html_entities(v);
+    if decoded
+        .chars()
+        .any(|c| c.is_control() && !c.is_whitespace())
+    {
+        return false;
+    }
+    let compact: String = decoded
         .chars()
         .filter(|c| !c.is_whitespace())
         .flat_map(|c| c.to_lowercase())
         .collect();
     const BAD: &[&str] = &["javascript:", "data:", "vbscript:", "file:", "blob:"];
     !BAD.iter().any(|prefix| compact.starts_with(prefix))
+}
+
+fn decode_html_entities(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(start) = rest.find('&') {
+        out.push_str(&rest[..start]);
+        rest = &rest[start..];
+        if let Some((ch, consumed)) = decode_one_entity(rest) {
+            out.push(ch);
+            rest = &rest[consumed..];
+        } else {
+            out.push('&');
+            rest = &rest[1..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn decode_one_entity(value: &str) -> Option<(char, usize)> {
+    let rest = value.strip_prefix('&')?;
+    if let Some(hex) = rest.strip_prefix("#x").or_else(|| rest.strip_prefix("#X")) {
+        return decode_numeric_entity(hex, 16, 3);
+    }
+    if let Some(dec) = rest.strip_prefix('#') {
+        return decode_numeric_entity(dec, 10, 2);
+    }
+    let name_len = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .count();
+    if name_len == 0 || rest.as_bytes().get(name_len) != Some(&b';') {
+        return None;
+    }
+    let ch = match &rest[..name_len] {
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        "quot" => '"',
+        "apos" => '\'',
+        "colon" => ':',
+        "Tab" => '\t',
+        "NewLine" => '\n',
+        "nbsp" => '\u{00a0}',
+        _ => return None,
+    };
+    Some((ch, 1 + name_len + 1))
+}
+
+fn decode_numeric_entity(body: &str, radix: u32, prefix_len: usize) -> Option<(char, usize)> {
+    let digits = body.chars().take_while(|c| c.is_digit(radix)).count();
+    if digits == 0 || digits > 6 {
+        return None;
+    }
+    let val = u32::from_str_radix(&body[..digits], radix).ok()?;
+    let mut consumed = prefix_len + digits;
+    if body.as_bytes().get(digits) == Some(&b';') {
+        consumed += 1;
+    }
+    Some((char::from_u32(val)?, consumed))
 }
 
 fn checked_href(href: &str) -> anyhow::Result<String> {
@@ -1505,7 +1705,17 @@ mod tests {
             rewrite_src("images/a.png", &t, &EmitMode::Export).unwrap(),
             "https://cdn.example.com/images/a.png"
         );
+        assert_eq!(
+            rewrite_src("a.png", &t, &EmitMode::Export).unwrap(),
+            "https://cdn.example.com/images/a.png"
+        );
         assert!(rewrite_src("images/../../.ssh/id_rsa", &t, &preview).is_err());
+        assert!(rewrite_src("http://127.0.0.1:1@evil.example/x.png", &t, &preview).is_err());
+        assert!(rewrite_src("javascript:alert(1)", &t, &EmitMode::Export).is_err());
+        assert!(rewrite_src("file:///etc/passwd", &t, &preview).is_err());
+        let mut http_base = t.clone();
+        http_base.base_url = "http://cdn.example.com/".into();
+        assert!(rewrite_src("images/a.png", &http_base, &EmitMode::Export).is_err());
     }
 
     #[test]
@@ -1865,8 +2075,15 @@ mod tests {
         ));
         assert!(!is_safe_link("javascript:alert(1)"));
         assert!(!is_safe_link("java\nscript:alert(1)"));
+        assert!(!is_safe_link("java&#115;cript:alert(1)"));
+        assert!(!is_safe_link("javascript&colon;alert(1)"));
+        assert!(!is_safe_link("&#100;ata:text/html,x"));
+        assert!(is_safe_link("https://example.com/?a=1&b=2"));
         assert!(is_safe_link("*|UNSUB|*"));
         assert!(is_safe_link("mailto:a@example.com"));
+        assert!(!css_is_safe(
+            "a { background: url ('https://evil.example/x.png'); }"
+        ));
         assert!(css_is_safe("a > b { color: red; }"));
         assert!(!css_is_safe("</style><script>alert(1)</script>"));
         let mut bad_css = Template::minimal();

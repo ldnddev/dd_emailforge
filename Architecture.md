@@ -67,8 +67,8 @@ template.json  --emit-->  template.mjml  --mjml-->  template.html
                                       +-- loopback wrapper (TUI p / CLI preview)
 ```
 
-- **Preview emit** rewrites relative image src to `http://127.0.0.1:{port}/images/…`.
-- **Export emit** joins relative src with `base_url` (must be `https://`). Dummyimage `https://` URLs in starters are already valid.
+- **Preview emit** rewrites relative image src to `http://127.0.0.1:{port}/images/…`. A bare name (`logo.png`) is `images/logo.png`.
+- **Export emit** joins that same `images/…` path with `base_url` (must be `https://`). Social icon `src` and accordion icon URLs use the same rewrite. Dummyimage `https://` URLs in starters are already valid.
 - Exported HTML is exactly `mjml` stdout. Wrapper chrome (`/__mtime`, dual iframes) never ships.
 
 ## TUI loop

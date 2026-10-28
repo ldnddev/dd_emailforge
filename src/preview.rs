@@ -213,22 +213,22 @@ fn route(path: &str, state: &HttpState) -> (&'static str, Vec<u8>, &'static str,
                 CSP_WRAPPER,
             )
         }
-        "/compiled.html" => {
-            if let Ok(bytes) = std::fs::read(&state.compiled) {
+        "/compiled.html" => match load_compiled(state) {
+            CompiledFile::Html(bytes) => {
                 ("200 OK", bytes, "text/html; charset=utf-8", CSP_COMPILED)
-            } else {
-                (
-                    "200 OK",
-                    b"<!doctype html><title>compiling</title><p>compiling...</p>".to_vec(),
-                    "text/html; charset=utf-8",
-                    CSP_COMPILED,
-                )
             }
-        }
+            CompiledFile::Missing => (
+                "200 OK",
+                b"<!doctype html><title>compiling</title><p>compiling...</p>".to_vec(),
+                "text/html; charset=utf-8",
+                CSP_COMPILED,
+            ),
+            CompiledFile::Denied => not_found(),
+        },
         "/__mtime" => {
-            let secs = std::fs::metadata(&state.compiled)
-                .and_then(|m| m.modified())
-                .ok()
+            let secs = resolved_compiled(state)
+                .and_then(|path| std::fs::metadata(path).ok())
+                .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
@@ -249,6 +249,40 @@ fn route(path: &str, state: &HttpState) -> (&'static str, Vec<u8>, &'static str,
         }
         p if p.starts_with("/images/") => serve_image(&state.template_root, p),
         _ => not_found(),
+    }
+}
+
+enum CompiledFile {
+    Html(Vec<u8>),
+    /// `mjml -w` has not written the file yet.
+    Missing,
+    /// The path exists but resolves outside `.preview/` (symlink escape).
+    Denied,
+}
+
+fn load_compiled(state: &HttpState) -> CompiledFile {
+    let Some(path) = resolved_compiled(state) else {
+        return if std::fs::symlink_metadata(&state.compiled).is_err() {
+            CompiledFile::Missing
+        } else {
+            CompiledFile::Denied
+        };
+    };
+    match std::fs::read(path) {
+        Ok(bytes) => CompiledFile::Html(bytes),
+        Err(_) => CompiledFile::Missing,
+    }
+}
+
+/// Compiled HTML must be a real file under `{template}/.preview`.
+fn resolved_compiled(state: &HttpState) -> Option<PathBuf> {
+    let preview_dir = state.template_root.join(".preview");
+    let preview_root = crate::paths::resolved_path_within(&state.template_root, &preview_dir)?;
+    let path = crate::paths::resolved_path_within(&state.template_root, &state.compiled)?;
+    if path.starts_with(&preview_root) && path.is_file() {
+        Some(path)
+    } else {
+        None
     }
 }
 
@@ -555,6 +589,12 @@ mod tests {
         assert!(!encoded.contains("topsecret"));
         let ok = http_get(port, "/images/ok.txt");
         assert!(ok.contains("visible"));
+        let compiled_link = dir.join(".preview/template.html");
+        let _ = std::fs::remove_file(&compiled_link);
+        std::os::unix::fs::symlink(&secret, &compiled_link).unwrap();
+        let leaked_html = http_get(port, "/compiled.html");
+        assert!(leaked_html.contains("404") || leaked_html.contains("Not Found"));
+        assert!(!leaked_html.contains("topsecret"));
         let foreign = http_get_host(port, "/images/ok.txt", "evil.example");
         assert!(foreign.starts_with("HTTP/1.1 400"));
         assert!(!foreign.contains("visible"));

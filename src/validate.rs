@@ -383,7 +383,7 @@ fn validate_css(t: &Template, report: &mut ValidateReport) {
             "head.css contains a forbidden script or expression".to_string(),
         );
     }
-    for url in css_urls(css) {
+    for url in crate::emit::css_url_values(css) {
         if !url.starts_with("https://fonts.googleapis.com/") {
             report.error_field(
                 "css",
@@ -391,24 +391,6 @@ fn validate_css(t: &Template, report: &mut ValidateReport) {
             );
         }
     }
-}
-
-fn css_urls(css: &str) -> Vec<String> {
-    let lower = css.to_ascii_lowercase();
-    let mut out = Vec::new();
-    let mut search = 0;
-    while let Some(idx) = lower[search..].find("url(") {
-        let start = search + idx + 4;
-        let rest = &css[start..];
-        let end = rest.find(')').unwrap_or(rest.len());
-        let raw = rest[..end].trim().trim_matches(['\'', '"']);
-        out.push(raw.to_string());
-        search = start + end + 1;
-        if search >= css.len() {
-            break;
-        }
-    }
-    out
 }
 
 fn contains_ci(hay: &str, needle: &str) -> bool {
@@ -449,7 +431,7 @@ fn walk_body(
             }
         }
         BodyNode::EmailArticle(a) => walk_email_article(a, report, root, opts, relative_images),
-        BodyNode::EmailFooter(f) => walk_email_footer(f, report),
+        BodyNode::EmailFooter(f) => walk_email_footer(f, report, root, opts, relative_images),
     }
 }
 
@@ -863,7 +845,7 @@ fn walk_column_child(
             check_unit(report, "mj-social.border_radius", &social.border_radius);
             check_color(report, "mj-social.color", opt(&social.color));
             for el in &social.elements {
-                check_social_element(el, report);
+                check_social_element(el, report, root, opts, relative_images);
             }
         }
         ColumnChild::MjTable(table) => {
@@ -893,7 +875,7 @@ fn walk_column_child(
             }
         }
         ColumnChild::MjNavbar(nav) => walk_navbar(nav, report),
-        ColumnChild::MjAccordion(acc) => walk_accordion(acc, report),
+        ColumnChild::MjAccordion(acc) => walk_accordion(acc, report, root, opts, relative_images),
         ColumnChild::MjCarousel(car) => walk_carousel(car, report, root, opts, relative_images),
     }
 }
@@ -921,7 +903,33 @@ fn walk_navbar(nav: &crate::model::MjNavbar, report: &mut ValidateReport) {
     }
 }
 
-fn walk_accordion(acc: &crate::model::MjAccordion, report: &mut ValidateReport) {
+fn walk_accordion(
+    acc: &crate::model::MjAccordion,
+    report: &mut ValidateReport,
+    root: Option<&Path>,
+    opts: ValidateOpts<'_>,
+    relative_images: &mut bool,
+) {
+    if let Some(url) = acc.icon_wrapped_url.as_deref() {
+        check_optional_image(
+            report,
+            "mj-accordion.icon_wrapped_url",
+            url,
+            root,
+            opts,
+            relative_images,
+        );
+    }
+    if let Some(url) = acc.icon_unwrapped_url.as_deref() {
+        check_optional_image(
+            report,
+            "mj-accordion.icon_unwrapped_url",
+            url,
+            root,
+            opts,
+            relative_images,
+        );
+    }
     check_padding(report, "mj-accordion.padding", &acc.padding);
     check_opt_one_of(
         report,
@@ -999,11 +1007,27 @@ fn walk_carousel(
     }
 }
 
-fn check_social_element(el: &MjSocialElement, report: &mut ValidateReport) {
+fn check_social_element(
+    el: &MjSocialElement,
+    report: &mut ValidateReport,
+    root: Option<&Path>,
+    opts: ValidateOpts<'_>,
+    relative_images: &mut bool,
+) {
     if el.href.trim().is_empty() {
         report.error_field("href", "mj-social-element.href is empty".to_string());
     } else {
         check_link(report, "mj-social-element.href", &el.href);
+    }
+    if let Some(src) = el.src.as_deref() {
+        check_optional_image(
+            report,
+            "mj-social-element.src",
+            src,
+            root,
+            opts,
+            relative_images,
+        );
     }
     if el.name == SocialNetwork::Web && el.src.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true)
     {
@@ -1100,7 +1124,13 @@ fn walk_email_article(
     }
 }
 
-fn walk_email_footer(f: &EmailFooter, report: &mut ValidateReport) {
+fn walk_email_footer(
+    f: &EmailFooter,
+    report: &mut ValidateReport,
+    root: Option<&Path>,
+    opts: ValidateOpts<'_>,
+    relative_images: &mut bool,
+) {
     let has_address = f.address_lines.iter().any(|l| !l.trim().is_empty());
     if !has_address {
         report.error_field(
@@ -1109,7 +1139,7 @@ fn walk_email_footer(f: &EmailFooter, report: &mut ValidateReport) {
         );
     }
     for el in &f.social {
-        check_social_element(el, report);
+        check_social_element(el, report, root, opts, relative_images);
     }
     check_link(report, "email-footer.unsubscribe_href", &f.unsubscribe_href);
     if has_address && f.unsubscribe_href.trim().is_empty() && !f.unsubscribe_label.trim().is_empty()
@@ -1170,11 +1200,15 @@ fn check_image_src(
                 field,
                 format!("{field} must be https:// in export, got {s}"),
             );
-        } else if lower.starts_with("http://127.0.0.1:") || lower.starts_with("http://localhost:") {
+        } else if crate::emit::is_http_loopback(s) {
             // Preview loopback is allowed outside export; still not a local file.
         } else {
             report.error_field(field, format!("{field} uses insecure http:// URL: {s}"));
         }
+        return;
+    }
+    if crate::emit::unsupported_image_scheme(s) {
+        report.error_field(field, format!("{field} uses unsupported scheme: {s}"));
         return;
     }
     *relative_images = true;
@@ -1210,14 +1244,17 @@ fn local_image_exists(root: &Path, src: &str) -> bool {
     {
         return false;
     }
-    let candidates = if rel.starts_with("images/") {
-        vec![root.join(rel_path)]
-    } else {
-        vec![root.join("images").join(rel_path), root.join(rel_path)]
+    let images = root.join("images");
+    let Some(images_root) = crate::paths::resolved_path_within(root, &images) else {
+        return false;
     };
-    candidates.iter().any(|p| {
-        crate::paths::resolved_path_within(root, p).is_some_and(|resolved| resolved.is_file())
-    })
+    let candidate = if rel.starts_with("images/") {
+        root.join(rel_path)
+    } else {
+        images.join(rel_path)
+    };
+    crate::paths::resolved_path_within(root, &candidate)
+        .is_some_and(|resolved| resolved.starts_with(&images_root) && resolved.is_file())
 }
 
 /// `mj-table` already emits `<table>`. Inner content must be row markup
@@ -1514,6 +1551,9 @@ mod tests {
         t.head.css = "body { background: url('https://evil.example/x.png'); }".to_string();
         let r = validate_template(&t);
         assert!(report_has(&r, "url()"));
+        t.head.css = "body { background: url ('https://evil.example/x.png'); }".to_string();
+        let spaced = validate_template(&t);
+        assert!(report_has(&spaced, "url()"));
     }
 
     #[test]
@@ -1727,6 +1767,80 @@ mod tests {
         let r = validate_template(&t);
         assert!(report_has(&r, "unsafe URL scheme"));
         assert!(!r.ok());
+        let encoded = template_with_button(MjButton {
+            content: "Go".into(),
+            href: "java&#115;cript:alert(1)".into(),
+            ..Default::default()
+        });
+        assert!(report_has(
+            &validate_template(&encoded),
+            "unsafe URL scheme"
+        ));
+    }
+
+    #[test]
+    fn social_icon_src_uses_image_rules() {
+        use crate::model::{MjSocial, SocialMode};
+        let mut t = Template::minimal();
+        t.body.nodes.push(BodyNode::MjSection(MjSection {
+            children: vec![SectionChild::MjColumn(MjColumn {
+                components: vec![ColumnChild::MjSocial(MjSocial {
+                    mode: SocialMode::Horizontal,
+                    elements: vec![MjSocialElement {
+                        name: crate::model::SocialNetwork::Web,
+                        href: "https://example.com".into(),
+                        src: Some("javascript:alert(1)".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        let r = validate_template(&t);
+        assert!(report_has(&r, "unsupported scheme") || report_has(&r, "javascript"));
+        assert!(!r.ok());
+    }
+
+    #[test]
+    fn bare_image_name_must_live_under_images() {
+        let dir = std::env::temp_dir().join(format!("dd_emailforge_img_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("images")).unwrap();
+        fs::write(dir.join("notes.txt"), b"not-an-image").unwrap();
+        fs::write(dir.join("images/logo.png"), b"png").unwrap();
+        let mut missing = Template::minimal();
+        missing.body.nodes.push(BodyNode::MjSection(MjSection {
+            children: vec![SectionChild::MjColumn(MjColumn {
+                components: vec![ColumnChild::MjImage(MjImage {
+                    src: "notes.txt".into(),
+                    alt: "n".into(),
+                    ..Default::default()
+                })],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        assert!(report_has(
+            &validate_template_with_root(&missing, Some(&dir)),
+            "Missing local image"
+        ));
+        let mut present = Template::minimal();
+        present.body.nodes.push(BodyNode::MjSection(MjSection {
+            children: vec![SectionChild::MjColumn(MjColumn {
+                components: vec![ColumnChild::MjImage(MjImage {
+                    src: "logo.png".into(),
+                    alt: "n".into(),
+                    ..Default::default()
+                })],
+                ..Default::default()
+            })],
+            ..Default::default()
+        }));
+        let ok = validate_template_with_root(&present, Some(&dir));
+        assert!(ok.ok(), "{:?}", ok.errors);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

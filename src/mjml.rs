@@ -112,7 +112,7 @@ pub fn compile_one_shot_captured(
         .arg("-o")
         .arg(output)
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped());
     push_mjml_flags(&mut cmd);
     #[cfg(unix)]
