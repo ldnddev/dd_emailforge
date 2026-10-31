@@ -1,5 +1,7 @@
-use std::path::PathBuf;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
+use ldnddev_theme::{ParseMode, ThemeSource};
 use ratatui::style::{Color, Style};
 use serde::Deserialize;
 
@@ -39,48 +41,14 @@ pub(crate) struct AppTheme {
     pub(crate) app_shell: Style,
     pub(crate) active_border: Style,
     pub(crate) header_quotes: Vec<String>,
+    pub(crate) omarchy: Option<ldnddev_theme::OmarchyChoice>,
+    pub(crate) overrides: BTreeSet<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ThemeFile {
+struct VersionProbe {
     #[serde(default)]
-    version: Option<u32>,
-    #[serde(default)]
-    header_quotes: Vec<String>,
-    colors: PaletteFile,
-}
-
-#[derive(Debug, Deserialize)]
-struct PaletteFile {
-    base_background: String,
-    body_background: String,
-    modal_background: String,
-    text_primary: String,
-    text_secondary: String,
-    text_disabled: Option<String>,
-    text_inverse: Option<String>,
-    text_labels: String,
-    text_active_focus: String,
-    modal_labels: String,
-    modal_text: String,
-    modal_header: String,
-    selected_background: String,
-    border_default: String,
-    border_active: String,
-    scrollbar: String,
-    scrollbar_hover: String,
-    input_border_default: String,
-    input_border_focus: String,
-    input_text_default: String,
-    input_text_focus: String,
-    cursor: String,
-    success: String,
-    warning: String,
-    error: String,
-    info: String,
-    folders: String,
-    files: String,
-    links: String,
+    version: Option<serde_yaml::Value>,
 }
 
 impl AppTheme {
@@ -90,6 +58,13 @@ impl AppTheme {
 
     pub(crate) fn load_from(
         candidates: Vec<(PathBuf, &'static str)>,
+    ) -> (Self, String, Option<String>) {
+        Self::load_resolved(candidates, &ldnddev_theme::OmarchyPaths::system())
+    }
+
+    pub(crate) fn load_resolved(
+        candidates: Vec<(PathBuf, &'static str)>,
+        omarchy: &ldnddev_theme::OmarchyPaths,
     ) -> (Self, String, Option<String>) {
         let mut warning: Option<String> = None;
 
@@ -104,48 +79,18 @@ impl AppTheme {
                     continue;
                 }
             };
-            let theme_file: ThemeFile = match serde_yaml::from_str(&raw) {
-                Ok(f) => f,
-                Err(e) => {
-                    warning = Some(format!("invalid theme file '{}': {}", path.display(), e));
-                    continue;
-                }
-            };
-
-            match theme_file.version {
-                Some(1) => {}
-                Some(v) => {
-                    warning = Some(format!(
-                        "theme '{}' declares version {} (expected 1); using built-in defaults",
-                        path.display(),
-                        v
-                    ));
-                    continue;
-                }
-                None => {
-                    warning = Some(format!(
-                        "theme '{}' is missing required 'version: 1'; using built-in defaults",
-                        path.display()
-                    ));
-                    continue;
-                }
+            if let Err(msg) = accept_version(&raw, &path) {
+                warning = Some(msg);
+                continue;
             }
-
-            let quotes = if !theme_file.header_quotes.is_empty() {
-                theme_file.header_quotes
-            } else {
-                default_header_quotes()
-            };
-
-            match Self::from_palette(theme_file.colors, quotes) {
-                Ok(t) => return (t, src.to_string(), warning),
+            match ldnddev_theme::load_from_str(&raw, ParseMode::Strict, theme_source(src)) {
+                Ok(palette) => return finish_palette(palette, src, omarchy, warning),
                 Err(e) => {
                     warning = Some(format!(
                         "theme '{}' color parse error: {}; using defaults",
                         path.display(),
                         e
                     ));
-                    continue;
                 }
             }
         }
@@ -153,74 +98,110 @@ impl AppTheme {
         (Self::default(), "default".to_string(), warning)
     }
 
-    fn from_palette(p: PaletteFile, header_quotes: Vec<String>) -> anyhow::Result<Self> {
-        let base_background = parse_hex_color(&p.base_background)?;
-        let body_background = parse_hex_color(&p.body_background)?;
-        let modal_background = parse_hex_color(&p.modal_background)?;
-        let text_primary = parse_hex_color(&p.text_primary)?;
-        let text_secondary = parse_hex_color(&p.text_secondary)?;
-        let text_disabled = parse_hex_color(p.text_disabled.as_deref().unwrap_or("#A0A4A8"))?;
-        let text_inverse = parse_hex_color(p.text_inverse.as_deref().unwrap_or("#F9FAFB"))?;
-        let text_labels = parse_hex_color(&p.text_labels)?;
-        let text_active_focus = parse_hex_color(&p.text_active_focus)?;
-        let modal_labels = parse_hex_color(&p.modal_labels)?;
-        let modal_text = parse_hex_color(&p.modal_text)?;
-        let modal_header = parse_hex_color(&p.modal_header)?;
-        let selected_background = parse_hex_color(&p.selected_background)?;
-        let border_default = parse_hex_color(&p.border_default)?;
-        let border_active = parse_hex_color(&p.border_active)?;
-        let scrollbar = parse_hex_color(&p.scrollbar)?;
-        let scrollbar_hover = parse_hex_color(&p.scrollbar_hover)?;
-        let input_border_default = parse_hex_color(&p.input_border_default)?;
-        let input_border_focus = parse_hex_color(&p.input_border_focus)?;
-        let input_text_default = parse_hex_color(&p.input_text_default)?;
-        let input_text_focus = parse_hex_color(&p.input_text_focus)?;
-        let cursor = parse_hex_color(&p.cursor)?;
-        let success = parse_hex_color(&p.success)?;
-        let warning = parse_hex_color(&p.warning)?;
-        let error = parse_hex_color(&p.error)?;
-        let info = parse_hex_color(&p.info)?;
-        let folders = parse_hex_color(&p.folders)?;
-        let files = parse_hex_color(&p.files)?;
-        let links = parse_hex_color(&p.links)?;
-
-        let app_shell = Style::default().bg(base_background).fg(text_primary);
-        let active_border = Style::default().fg(border_active);
-
-        Ok(Self {
+    fn from_palette(mut palette: ldnddev_theme::Palette) -> Self {
+        palette.ensure_extras(extra_theme_fields());
+        if palette.header_quotes.is_empty() {
+            palette.header_quotes = default_header_quotes();
+        }
+        let get =
+            |key: &str, fallback: Color| palette.get(key).map(rgb_to_color).unwrap_or(fallback);
+        let base_background = get("base_background", Color::Rgb(15, 17, 20));
+        let text_primary = get("text_primary", Color::Rgb(245, 246, 247));
+        let border_active = get("border_active", Color::Rgb(100, 180, 245));
+        Self {
             base_background,
-            body_background,
-            modal_background,
+            body_background: get("body_background", Color::Rgb(42, 45, 49)),
+            modal_background: get("modal_background", Color::Rgb(28, 30, 33)),
             text_primary,
-            text_secondary,
-            text_disabled,
-            text_inverse,
-            text_labels,
-            text_active_focus,
-            modal_labels,
-            modal_text,
-            modal_header,
-            selected_background,
-            border_default,
+            text_secondary: get("text_secondary", Color::Rgb(158, 163, 170)),
+            text_disabled: get("text_disabled", Color::Rgb(160, 164, 168)),
+            text_inverse: get("text_inverse", Color::Rgb(249, 250, 251)),
+            text_labels: get("text_labels", Color::Rgb(255, 175, 70)),
+            text_active_focus: get("text_active_focus", border_active),
+            modal_labels: get("modal_labels", border_active),
+            modal_text: get("modal_text", text_primary),
+            modal_header: get("modal_header", border_active),
+            selected_background: get("selected_background", base_background),
+            border_default: get("border_default", text_primary),
             border_active,
-            scrollbar,
-            scrollbar_hover,
-            input_border_default,
-            input_border_focus,
-            input_text_default,
-            input_text_focus,
-            cursor,
-            success,
+            scrollbar: get("scrollbar", Color::Rgb(255, 160, 135)),
+            scrollbar_hover: get("scrollbar_hover", border_active),
+            input_border_default: get("input_border_default", text_primary),
+            input_border_focus: get("input_border_focus", border_active),
+            input_text_default: get("input_text_default", text_primary),
+            input_text_focus: get("input_text_focus", border_active),
+            cursor: get("cursor", border_active),
+            success: get("success", Color::Rgb(130, 224, 170)),
+            warning: get("warning", Color::Rgb(245, 196, 105)),
+            error: get("error", Color::Rgb(229, 115, 115)),
+            info: get("info", Color::Rgb(93, 173, 226)),
+            folders: get("folders", border_active),
+            files: get("files", Color::Rgb(255, 175, 70)),
+            links: get("links", Color::Rgb(255, 160, 135)),
+            app_shell: Style::default().bg(base_background).fg(text_primary),
+            active_border: Style::default().fg(border_active),
+            header_quotes: palette.header_quotes,
+            omarchy: palette.omarchy,
+            overrides: palette.overrides,
+        }
+    }
+}
+
+fn finish_palette(
+    palette: ldnddev_theme::Palette,
+    source: &str,
+    omarchy: &ldnddev_theme::OmarchyPaths,
+    warning: Option<String>,
+) -> (AppTheme, String, Option<String>) {
+    match ldnddev_theme::apply_omarchy(&palette, omarchy) {
+        Ok(resolved) => (
+            AppTheme::from_palette(resolved),
+            source.to_string(),
             warning,
-            error,
-            info,
-            folders,
-            files,
-            links,
-            app_shell,
-            active_border,
-            header_quotes,
-        })
+        ),
+        Err(err) => (
+            AppTheme::default(),
+            "default".to_string(),
+            Some(format!(
+                "omarchy theme failed ({err}); using built-in defaults"
+            )),
+        ),
+    }
+}
+
+fn theme_source(src: &str) -> ThemeSource {
+    match src {
+        "global" => ThemeSource::Global,
+        "default" => ThemeSource::Default,
+        _ => ThemeSource::Local,
+    }
+}
+
+/// Keep the historical version warnings. The shared loader's wording differs.
+fn accept_version(raw: &str, path: &Path) -> Result<(), String> {
+    let probe: VersionProbe = serde_yaml::from_str(raw)
+        .map_err(|e| format!("invalid theme file '{}': {}", path.display(), e))?;
+    match probe.version {
+        Some(serde_yaml::Value::Number(n)) => match n.as_u64() {
+            Some(1) => Ok(()),
+            Some(v) => Err(format!(
+                "theme '{}' declares version {} (expected 1); using built-in defaults",
+                path.display(),
+                v
+            )),
+            None => Err(format!(
+                "invalid theme file '{}': version is not an integer",
+                path.display()
+            )),
+        },
+        None => Err(format!(
+            "theme '{}' is missing required 'version: 1'; using built-in defaults",
+            path.display()
+        )),
+        Some(_) => Err(format!(
+            "invalid theme file '{}': version is not an integer",
+            path.display()
+        )),
     }
 }
 
@@ -262,6 +243,8 @@ impl Default for AppTheme {
             app_shell: Style::default().bg(base).fg(text),
             active_border: Style::default().fg(border_focus),
             header_quotes: default_header_quotes(),
+            omarchy: None,
+            overrides: BTreeSet::new(),
         }
     }
 }
@@ -288,6 +271,8 @@ fn color_to_rgb(color: Color) -> ldnddev_theme::Rgb {
 pub(crate) fn palette_from_theme(theme: &AppTheme) -> ldnddev_theme::Palette {
     let mut palette = ldnddev_theme::Palette::builtin();
     palette.header_quotes = theme.header_quotes.clone();
+    palette.omarchy = theme.omarchy.clone();
+    palette.overrides = theme.overrides.clone();
     for (key, color) in [
         ("base_background", theme.base_background),
         ("body_background", theme.body_background),
@@ -325,101 +310,7 @@ pub(crate) fn palette_from_theme(theme: &AppTheme) -> ldnddev_theme::Palette {
 }
 
 pub(crate) fn apply_palette(theme: &mut AppTheme, palette: &ldnddev_theme::Palette) {
-    let get = |k: &str| palette.get(k).map(rgb_to_color);
-    if let Some(c) = get("base_background") {
-        theme.base_background = c;
-    }
-    if let Some(c) = get("body_background") {
-        theme.body_background = c;
-    }
-    if let Some(c) = get("modal_background") {
-        theme.modal_background = c;
-    }
-    if let Some(c) = get("text_primary") {
-        theme.text_primary = c;
-    }
-    if let Some(c) = get("text_secondary") {
-        theme.text_secondary = c;
-    }
-    if let Some(c) = get("text_disabled") {
-        theme.text_disabled = c;
-    }
-    if let Some(c) = get("text_inverse") {
-        theme.text_inverse = c;
-    }
-    if let Some(c) = get("text_labels") {
-        theme.text_labels = c;
-    }
-    if let Some(c) = get("text_active_focus") {
-        theme.text_active_focus = c;
-    }
-    if let Some(c) = get("modal_labels") {
-        theme.modal_labels = c;
-    }
-    if let Some(c) = get("modal_text") {
-        theme.modal_text = c;
-    }
-    if let Some(c) = get("modal_header") {
-        theme.modal_header = c;
-    }
-    if let Some(c) = get("selected_background") {
-        theme.selected_background = c;
-    }
-    if let Some(c) = get("border_default") {
-        theme.border_default = c;
-    }
-    if let Some(c) = get("border_active") {
-        theme.border_active = c;
-        theme.active_border = Style::default().fg(c);
-    }
-    if let Some(c) = get("scrollbar") {
-        theme.scrollbar = c;
-    }
-    if let Some(c) = get("scrollbar_hover") {
-        theme.scrollbar_hover = c;
-    }
-    if let Some(c) = get("input_border_default") {
-        theme.input_border_default = c;
-    }
-    if let Some(c) = get("input_border_focus") {
-        theme.input_border_focus = c;
-    }
-    if let Some(c) = get("input_text_default") {
-        theme.input_text_default = c;
-    }
-    if let Some(c) = get("input_text_focus") {
-        theme.input_text_focus = c;
-    }
-    if let Some(c) = get("cursor") {
-        theme.cursor = c;
-    }
-    if let Some(c) = get("success") {
-        theme.success = c;
-    }
-    if let Some(c) = get("warning") {
-        theme.warning = c;
-    }
-    if let Some(c) = get("error") {
-        theme.error = c;
-    }
-    if let Some(c) = get("info") {
-        theme.info = c;
-    }
-    if let Some(c) = get("folders") {
-        theme.folders = c;
-    }
-    if let Some(c) = get("files") {
-        theme.files = c;
-    }
-    if let Some(c) = get("links") {
-        theme.links = c;
-    }
-    theme.app_shell = Style::default()
-        .bg(theme.base_background)
-        .fg(theme.text_primary);
-    if !palette.header_quotes.is_empty() {
-        theme.header_quotes = palette.header_quotes.clone();
-    }
+    *theme = AppTheme::from_palette(palette.clone());
 }
 
 pub(crate) fn default_header_quotes() -> Vec<String> {
@@ -592,5 +483,59 @@ colors:
             theme.header_quotes,
             vec!["Custom tagline only.".to_string()]
         );
+    }
+
+    #[test]
+    fn omarchy_link_maps_colors_and_keeps_override() {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let root = std::env::temp_dir().join(format!(
+            "dd_emailforge_omarchy_{}_{}",
+            std::process::id(),
+            n
+        ));
+        let src = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("crates/ldnddev_theme/tests/fixtures/omarchy/tokyo-night/colors.toml");
+        fs::create_dir_all(root.join("stock/tokyo-night")).expect("mkdir");
+        fs::copy(&src, root.join("stock/tokyo-night/colors.toml")).expect("copy");
+        let yaml = "version: 1\nomarchy: tokyo-night\ncolors:\n  text_labels: \"#ABCDEF\"\n";
+        let path = temp_yaml(yaml);
+        let (theme, source, warning) = AppTheme::load_resolved(
+            vec![(path.clone(), "local")],
+            &ldnddev_theme::OmarchyPaths::from_root(&root),
+        );
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(&root);
+        assert!(warning.is_none(), "{warning:?}");
+        assert_eq!(source, "local");
+        assert_eq!(color_to_hex(theme.body_background), "#1A1B26");
+        assert_eq!(color_to_hex(theme.text_labels), "#ABCDEF");
+        assert_eq!(
+            theme.omarchy,
+            Some(ldnddev_theme::OmarchyChoice::Theme("tokyo-night".into()))
+        );
+        assert!(theme.overrides.contains("text_labels"));
+    }
+
+    #[test]
+    fn missing_omarchy_theme_uses_builtin_with_warning() {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let root = std::env::temp_dir().join(format!(
+            "dd_emailforge_omarchy_missing_{}_{}",
+            std::process::id(),
+            n
+        ));
+        fs::create_dir_all(&root).expect("mkdir");
+        let path = temp_yaml("version: 1\nomarchy: missing-theme\n");
+        let (theme, source, warning) = AppTheme::load_resolved(
+            vec![(path.clone(), "local")],
+            &ldnddev_theme::OmarchyPaths::from_root(&root),
+        );
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(&root);
+        let msg = warning.expect("warning");
+        assert!(msg.contains("omarchy theme failed"), "{msg}");
+        assert_eq!(source, "default");
+        assert_eq!(theme.base_background, Color::Rgb(15, 17, 20));
+        assert!(theme.omarchy.is_none());
     }
 }

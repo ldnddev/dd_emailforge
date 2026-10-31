@@ -39,6 +39,7 @@ mod insert;
 mod modals;
 mod session;
 mod theme;
+mod toast_chrome;
 mod toasts;
 mod tree;
 mod util;
@@ -149,6 +150,9 @@ pub(super) struct App {
     help_scroll_max: u16,
     show_theme: bool,
     theme_editor: Option<ldnddev_theme::ThemeEditor>,
+    theme_picker: Option<ldnddev_theme::ThemePicker>,
+    omarchy_paths: ldnddev_theme::OmarchyPaths,
+    follow_stamp: Option<String>,
     theme_scroll: u16,
     theme_scroll_max: u16,
     theme_status: Option<String>,
@@ -194,6 +198,13 @@ impl App {
         path: Option<PathBuf>,
     ) -> Self {
         let header_copy = choose_header_copy(&theme.header_quotes);
+        let omarchy_paths = ldnddev_theme::OmarchyPaths::system();
+        let follow_stamp = match &theme.omarchy {
+            Some(ldnddev_theme::OmarchyChoice::Follow) => {
+                ldnddev_theme::follow_stamp(&omarchy_paths)
+            }
+            _ => None,
+        };
         let last_saved_json = template
             .as_ref()
             .and_then(|t| serde_json::to_string(t).ok())
@@ -212,6 +223,9 @@ impl App {
             help_scroll_max: 0,
             show_theme: false,
             theme_editor: None,
+            theme_picker: None,
+            omarchy_paths,
+            follow_stamp,
             theme_scroll: 0,
             theme_scroll_max: 0,
             theme_status,

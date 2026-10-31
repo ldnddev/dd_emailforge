@@ -109,7 +109,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         "Global",
         &[
             ("F1", "Open/close this help"),
-            ("F2", "Open/close theme source + sampled tokens"),
+            ("F2", "Omarchy themes (Enter apply, e edit, s save)"),
             ("F3", "Validate; Enter on an error jumps to the node/field"),
             ("n", "New template (starter + folder)"),
             ("o", "Open template.json or a folder"),

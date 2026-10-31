@@ -31,7 +31,27 @@ fn send_mouse(app: &mut App, kind: MouseEventKind, column: u16, row: u16) {
 }
 
 fn chrome_app() -> App {
-    App::new(AppTheme::default(), "default".to_string(), None, None, None)
+    let mut app = App::new(AppTheme::default(), "default".to_string(), None, None, None);
+    // No Omarchy themes here, so F2 opens the hex editor directly.
+    app.omarchy_paths = ldnddev_theme::OmarchyPaths::from_root(std::path::Path::new(
+        "/nonexistent/dd_emailforge_omarchy",
+    ));
+    app
+}
+
+fn frame_text(app: &mut App) -> String {
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw");
+    let buf = terminal.backend().buffer();
+    let mut out = String::new();
+    for y in 0..buf.area.height {
+        for x in 0..buf.area.width {
+            out.push_str(buf[(x, y)].symbol());
+        }
+        out.push('\n');
+    }
+    out
 }
 
 fn app_with_template() -> App {
@@ -72,6 +92,81 @@ fn f2_scroll_keys_update_theme_scroll() {
     assert_eq!(app.theme_editor.as_ref().unwrap().selected, 1);
     send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     assert!(app.theme_editor.is_none());
+}
+
+#[test]
+fn f2_lists_omarchy_themes_and_esc_reverts() {
+    let dir = std::env::temp_dir().join(format!("dd_emailforge_f2_omarchy_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/ldnddev_theme/tests/fixtures/omarchy/tokyo-night/colors.toml");
+    std::fs::create_dir_all(dir.join("stock/tokyo-night")).expect("mkdir");
+    std::fs::copy(&src, dir.join("stock/tokyo-night/colors.toml")).expect("copy");
+    std::fs::create_dir_all(dir.join("state/theme")).expect("state");
+    std::fs::write(dir.join("state/theme.name"), "tokyo-night\n").expect("name");
+    std::fs::copy(&src, dir.join("state/theme/colors.toml")).expect("current");
+
+    let mut app = chrome_app();
+    app.omarchy_paths = ldnddev_theme::OmarchyPaths::from_root(&dir);
+    let before = color_to_hex(app.theme.body_background);
+    send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+    assert!(app.show_theme);
+    assert!(app.theme_picker.is_some());
+    assert!(app.theme_editor.is_none());
+    let picker = app.theme_picker.as_ref().unwrap();
+    assert!(matches!(
+        picker.rows[picker.selected],
+        ldnddev_theme::PickerRow::Custom
+    ));
+    let listed = frame_text(&mut app);
+    assert!(listed.contains("F2 Themes"), "{listed}");
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(color_to_hex(app.theme.body_background), before);
+    send_key(&mut app, KeyCode::Char('g'), KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(color_to_hex(app.theme.body_background), "#1A1B26");
+    send_key(&mut app, KeyCode::Char('e'), KeyModifiers::NONE);
+    assert!(app.theme_editor.is_some());
+    assert!(app.theme_picker.is_some());
+    let editing = frame_text(&mut app);
+    assert!(editing.contains("Esc back"), "{editing}");
+    send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(app.show_theme);
+    assert!(app.theme_editor.is_none());
+    assert!(app.theme_picker.is_some());
+    send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(!app.show_theme);
+    assert_eq!(color_to_hex(app.theme.body_background), before);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn focus_refreshes_followed_theme_without_reshuffling_header() {
+    let mut app = chrome_app();
+    app.header_copy = "PINNED HEADER".into();
+    assert!(!reports_change(&mut app, Event::FocusGained));
+    assert_eq!(app.header_copy, "PINNED HEADER");
+
+    app.show_theme = true;
+    app.theme.omarchy = Some(ldnddev_theme::OmarchyChoice::Follow);
+    app.follow_stamp = Some("stale".into());
+    assert!(!reports_change(&mut app, Event::FocusGained));
+    assert!(matches!(
+        app.theme.omarchy,
+        Some(ldnddev_theme::OmarchyChoice::Follow)
+    ));
+    app.show_theme = false;
+
+    app.follow_stamp = ldnddev_theme::follow_stamp(&app.omarchy_paths);
+    assert!(!reports_change(&mut app, Event::FocusGained));
+
+    app.follow_stamp = Some("stale".into());
+    assert!(reports_change(&mut app, Event::FocusGained));
+    assert_eq!(app.header_copy, "PINNED HEADER");
+    assert_eq!(
+        app.follow_stamp,
+        ldnddev_theme::follow_stamp(&app.omarchy_paths)
+    );
 }
 
 #[test]

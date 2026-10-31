@@ -4,7 +4,7 @@ Terminal-UI email template builder. Edit a typed `template.json`, export strict 
 
 **Tutorial (setup, install, TUI, screenshots):** [ldnddev.github.io/dd_emailforge](https://ldnddev.github.io/dd_emailforge/)
 
-Current release: **0.9.7**.
+Current release: **0.9.8**.
 
 ## Install
 
@@ -12,7 +12,7 @@ Current release: **0.9.7**.
 curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash
 ```
 
-That detects OS/arch, downloads the matching GitHub Release (`linux`/`darwin` × `x86_64`/`aarch64`), checks the published sha256, and installs `$HOME/.local/bin/dd_emailforge`. Theme → `$HOME/.config/ldnddev/` (an existing theme is left alone). Pin a version with `VERSION=v0.9.7`. Uninstall: pipe the same script with `bash -s -- uninstall`.
+That detects OS/arch, downloads the matching GitHub Release (`linux`/`darwin` × `x86_64`/`aarch64`), checks the published sha256, and installs `$HOME/.local/bin/dd_emailforge`. Theme → `$HOME/.config/ldnddev/` (an existing theme is left alone). Pin a version with `VERSION=v0.9.8`. Uninstall: pipe the same script with `bash -s -- uninstall`.
 
 From a clone (builds with cargo):
 
