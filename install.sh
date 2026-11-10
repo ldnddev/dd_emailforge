@@ -9,18 +9,22 @@
 #   ./install.sh install        # same as above
 #   ./install.sh --from-release # download the package for this machine
 #   ./install.sh --from-source  # always cargo-build (clones the repo if needed)
-#   ./install.sh uninstall      # remove the binary + theme + empty dirs
+#   ./install.sh uninstall      # remove the binary, launcher, theme, and empty dirs
 #   ./install.sh --help
 #
 # Override defaults via env vars:
 #   PREFIX=$HOME/.local                       # binary lives at $PREFIX/bin/dd_emailforge
 #   CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/ldnddev
-#   VERSION=latest                            # or v0.9.8 / 0.9.8
+#   XDG_DATA_HOME=$HOME/.local/share          # Linux launcher dir is $XDG_DATA_HOME/applications
+#   VERSION=latest                            # or v0.9.9 / 0.9.9
 #   REPO=ldnddev/dd_emailforge
 #   DOWNLOAD_BASE=https://…/download          # optional mirror (also accepts file://)
 #   GITHUB_TOKEN=…                            # optional; private repos / higher rate limits
 #
-# Re-run safe: existing themes are left alone on install; the binary is overwritten.
+# On Linux, install writes a desktop launcher for the TUI. Pass the same
+# PREFIX, BIN_DIR, and XDG_DATA_HOME to uninstall that you used to install.
+# Re-run safe: existing themes are left alone on install; the binary and
+# launcher are overwritten. Saved templates are left in place on uninstall.
 
 set -euo pipefail
 
@@ -64,18 +68,24 @@ Usage:
   ./install.sh install        # same as above
   ./install.sh --from-release # download the package for this machine
   ./install.sh --from-source  # always cargo-build (clones the repo if needed)
-  ./install.sh uninstall      # remove the binary + theme + empty dirs
+  ./install.sh uninstall      # remove the binary, launcher, theme, and empty dirs
   ./install.sh --help
 
 Override defaults via env vars:
   PREFIX=$HOME/.local                       # binary lives at $PREFIX/bin/dd_emailforge
   CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/ldnddev
-  VERSION=latest                            # or v0.9.8 / 0.9.8
+  XDG_DATA_HOME=$HOME/.local/share          # Linux launcher dir is $XDG_DATA_HOME/applications
+  VERSION=latest                            # or v0.9.9 / 0.9.9
   REPO=ldnddev/dd_emailforge
   DOWNLOAD_BASE=https://…/download          # optional mirror (also accepts file://)
   GITHUB_TOKEN=…                            # optional; private repos / higher rate limits
 
-Re-run safe: existing themes are left alone on install; the binary is overwritten.
+On Linux, install writes a desktop launcher for the TUI. Pass the same
+PREFIX, BIN_DIR, and XDG_DATA_HOME to uninstall that you used to install.
+Saved templates and the last-opened path are left in place.
+
+Re-run safe: existing themes are left alone on install; the binary and
+launcher are overwritten.
 EOF
 }
 
@@ -233,6 +243,99 @@ install_file() {
     fi
 }
 
+# Desktop menus search XDG_DATA_HOME, then the system data dirs.
+# A prefix under $HOME still publishes the launcher where the session looks.
+apps_dir() {
+    if [ -n "${XDG_DATA_HOME:-}" ]; then
+        printf '%s/applications\n' "$XDG_DATA_HOME"
+        return
+    fi
+    case "$PREFIX" in
+        "$HOME"|"$HOME"/*)
+            printf '%s/.local/share/applications\n' "$HOME"
+            ;;
+        *)
+            printf '%s/share/applications\n' "$PREFIX"
+            ;;
+    esac
+}
+
+# Quote one desktop-entry value. Field codes treat % specially, so Exec
+# doubles a literal percent. TryExec does not, so pass 0 for that key.
+desktop_quote() {
+    local s="$1" escape_percent="${2:-1}"
+    case "$s" in
+        *$'\n'*)
+            red "Desktop path contains a newline"
+            exit 1
+            ;;
+    esac
+    s=${s//\\/\\\\}
+    s=${s//\"/\\\"}
+    s=${s//\`/\\\`}
+    s=${s//\$/\\\$}
+    if [ "$escape_percent" = 1 ]; then
+        s=${s//%/%%}
+    fi
+    printf '"%s"' "$s"
+}
+
+write_desktop() {
+    local dest="$1" bin="$2"
+    local exec_q try_q
+    if [ -d "$dest" ]; then
+        red "Refusing to overwrite directory $dest"
+        exit 1
+    fi
+    exec_q="$(desktop_quote "$bin" 1)"
+    try_q="$(desktop_quote "$bin" 0)"
+    {
+        printf '%s\n' "[Desktop Entry]"
+        printf '%s\n' "Type=Application"
+        printf '%s\n' "Version=1.0"
+        printf '%s\n' "Name=dd_emailforge"
+        printf '%s\n' "GenericName=Email template builder"
+        printf '%s\n' "Comment=Edit MJML email templates in the terminal"
+        printf '%s\n' "Exec=${exec_q}"
+        printf '%s\n' "TryExec=${try_q}"
+        printf '%s\n' "Icon=internet-mail"
+        printf '%s\n' "Terminal=true"
+        printf '%s\n' "Categories=Office;"
+        printf '%s\n' "Keywords=email;mjml;template;"
+        printf '%s\n' "StartupNotify=false"
+    } >"$dest"
+    chmod 644 "$dest"
+}
+
+refresh_desktop_database() {
+    local dir="$1"
+    if [ -d "$dir" ] && command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "$dir" >/dev/null 2>&1 || true
+    fi
+}
+
+# Linux application menus launch the TUI in a terminal. Other systems skip
+# this; the binary install is unchanged.
+install_launcher() {
+    local os dir dest bin
+    os="$(uname -s)"
+    if [ "$os" != "Linux" ]; then
+        yellow "Desktop launcher is written on Linux. Skipped on $os."
+        return 0
+    fi
+    bin="$BIN_DIR/$BIN_NAME"
+    if [ ! -x "$bin" ]; then
+        yellow "No executable at $bin — skipped desktop launcher."
+        return 0
+    fi
+    dir="$(apps_dir)"
+    dest="$dir/${BIN_NAME}.desktop"
+    mkdir -p "$dir"
+    write_desktop "$dest" "$bin"
+    green "Launcher → $dest"
+    refresh_desktop_database "$dir"
+}
+
 install_payload() {
     local src_bin="$1"
     local src_theme="${2:-}"
@@ -257,6 +360,8 @@ install_payload() {
 
     mkdir -p "$LIBRARY_DIR"
     green "Template library dir → $LIBRARY_DIR"
+
+    install_launcher
 }
 
 path_note() {
@@ -439,6 +544,20 @@ do_uninstall() {
         yellow "No binary at $bin_dst"
     fi
 
+    if [ "$(uname -s)" = "Linux" ]; then
+        local apps dest
+        apps="$(apps_dir)"
+        dest="$apps/${BIN_NAME}.desktop"
+        if [ -f "$dest" ] || [ -L "$dest" ]; then
+            rm -f "$dest"
+            green "Removed $dest"
+            removed_any=1
+            refresh_desktop_database "$apps"
+        else
+            yellow "No launcher at $dest"
+        fi
+    fi
+
     if [ -f "$theme_dst" ] || [ -L "$theme_dst" ]; then
         rm -f "$theme_dst"
         green "Removed $theme_dst"
@@ -467,6 +586,9 @@ do_uninstall() {
     else
         green ""
         green "Uninstall complete."
+        if [ -d "$app_dir" ]; then
+            yellow "Left $app_dir in place (saved templates and last-opened path)."
+        fi
     fi
 }
 
