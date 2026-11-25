@@ -50,7 +50,7 @@ Pain points this app removes:
 - Official `mjml` CLI compiles HTML with `validationLevel=strict`. Missing `mjml` is a blocking error, never a silent engine swap.
 - Live browser preview via `mjml -w` + loopback wrapper (subject, preheader, 600 + 320 iframes).
 - Brand as editable `mj-attributes` on every template.
-- Visual-standard chrome: 3-line header, 1-line adaptive footer starting `F1:Help`, F1 Help, F2 Theme, toasts, modals, themed inputs, scrollbars, mouse, click-to-focus.
+- Visual-standard chrome: 3-line header, 1-line adaptive footer starting `F1: Settings` (narrow: `F1:Settings`), F1 Settings sheet (Themes, then Help; F2 is the same toggle), toasts, modals, themed inputs, scrollbars, mouse, click-to-focus.
 - Master/detail body: Structure tree + Details inspector with a 600px ascii map.
 - Primitives 1:1 with a closed MJML subset, plus five opinionated blocks with `components/*.md` specs.
 - Four init starters: `welcome`, `newsletter`, `promo`, `transactional`.
@@ -386,22 +386,19 @@ Merge tags in, hope out.
 
 **Header** (visual standard §3, prompt wording): bordered `Block`, `.title("dd_emailforge")`, `Borders::ALL`, `border_style(theme.active_border)`, `style(theme.app_shell)`, inner line = tagline. **Do not** put `v{version}` in the title (siteforge does; the standard and this product's prompt say the binary name only). Decorative; no mouse/keyboard.
 
-**Footer** (visual standard §4): borderless `Paragraph`, `theme.app_shell`, always starts `F1:Help`. Width-adaptive. **No compile status, no theme health.** Dirty flag may prefix `*  ` like siteforge.
+**Footer** (visual standard §4): borderless `Paragraph`, `theme.app_shell`, starts `F1: Settings` at 80 columns and wider and `F1:Settings` below that. **No compile status, no theme health.** Dirty flag may prefix `*  ` like siteforge.
 
-F2 appears in **every** width band (the more correct reading of the standard vs. siteforge, which often omits F2). Highest-value actions follow F2. Quit is **last**, matching the standard’s own medium/wide examples and siteforge’s `footer_hint`, not the §4 prose sentence “then quit, then the app's highest-value actions.”
+F1 toggles Settings. F2 is the same toggle. Highest-value actions sit between Settings and Quit. Quit is **last**.
 
 ```text
 # narrow  (<80)
-F1:Help  F2:Theme  F3:Val  p:Prev  s:Save  C-q:Quit
+F1:Settings  F3:Val  p:Prev  s:Save  ^Q:Quit
 
-# medium  (80–119)
-F1: Help   F2: Theme   F3: Validate   p: Preview   s: Save   /: Insert   Ctrl+Q: Quit
-
-# wide    (≥120)
-F1: Help   F2: Theme   F3: Validate   p: Preview   s: Save   /: Insert   Ctrl+Q: Quit   (mouse: click/scroll)
+# wide    (≥80)
+F1: Settings  F3: Validate  p: Preview  s: Save  /: Insert  Ctrl+Q: Quit
 ```
 
-When a modal is open: `F1:Help  Esc:Close  Ctrl+Q:Quit` (narrow: `C-q:Quit`).
+While Settings or another modal is open: `F1: Settings  Esc: Close  Ctrl+Q: Quit` (below 80: `F1:Settings  Esc:Close  ^Q:Quit`).
 
 **Quit:** `Ctrl+Q` only (`KeyCode::Char('q')` + `KeyModifiers::CONTROL`), same as `dd_siteforge/src/tui/events.rs`. Bare `q` does **nothing** at the app level (so it can be typed in FormEdit, SavePrompt, and the insert picker). If `dirty`, `Modal::ConfirmPrompt` ("Unsaved changes. Quit anyway?"). PR 1 has no document, so `Ctrl+Q` exits immediately. Test `q_without_modifiers_does_not_quit` is required in PR 1 (siteforge has the same test).
 

@@ -1,4 +1,4 @@
-//! Keyboard and mouse dispatch for chrome (F1/F2/F3/s/Ctrl+Q).
+//! Keyboard and mouse dispatch for chrome (F1/F2 Settings, F3 validation, Ctrl+Q).
 use super::*;
 
 /// Inputs that cannot change the frame. Mouse capture streams `Moved`/`Drag`
@@ -29,12 +29,13 @@ impl App {
             return Ok(false);
         }
 
-        if self.show_help {
-            return Ok(self.handle_help_event(evt));
+        if matches!(self.modal, Some(Modal::ConfirmPrompt { .. })) {
+            let _ = self.handle_modal_event(evt);
+            return Ok(true);
         }
 
         if self.show_theme {
-            return Ok(self.handle_theme_event(evt));
+            return Ok(self.handle_settings_event(evt));
         }
 
         if self.modal.is_some() {
@@ -49,12 +50,8 @@ impl App {
 
         let changed = match evt {
             Event::Key(k) => match k.code {
-                KeyCode::F(1) => {
-                    self.show_help = true;
-                    true
-                }
-                KeyCode::F(2) => {
-                    self.open_theme_ui();
+                KeyCode::F(1) | KeyCode::F(2) => {
+                    self.toggle_settings();
                     true
                 }
                 KeyCode::F(3) => {
@@ -157,94 +154,99 @@ impl App {
         Ok(changed)
     }
 
-    fn handle_help_event(&mut self, evt: Event) -> bool {
-        let before = (self.show_help, self.help_scroll);
+    fn handle_settings_event(&mut self, evt: Event) -> bool {
+        let before = self.settings_snap();
         match evt {
-            Event::Key(k) => match k.code {
-                KeyCode::F(1) | KeyCode::Esc => {
-                    self.show_help = false;
-                    self.help_scroll = 0;
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.help_scroll = self.help_scroll.saturating_add(1).min(self.help_scroll_max);
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.help_scroll = self.help_scroll.saturating_sub(1);
-                }
-                KeyCode::PageDown => {
-                    self.help_scroll = self
-                        .help_scroll
-                        .saturating_add(10)
-                        .min(self.help_scroll_max);
-                }
-                KeyCode::PageUp => {
-                    self.help_scroll = self.help_scroll.saturating_sub(10);
-                }
-                KeyCode::Home | KeyCode::Char('g') => {
-                    self.help_scroll = 0;
-                }
-                KeyCode::End | KeyCode::Char('G') => {
-                    self.help_scroll = self.help_scroll_max;
-                }
-                _ => {}
-            },
-            Event::Mouse(m) => match m.kind {
-                MouseEventKind::ScrollUp => {
-                    self.help_scroll = self.help_scroll.saturating_sub(3);
-                }
-                MouseEventKind::ScrollDown => {
-                    self.help_scroll = self.help_scroll.saturating_add(3).min(self.help_scroll_max);
-                }
-                _ => {}
-            },
+            Event::Key(k) => self.handle_settings_key(k),
+            Event::Mouse(m) => self.handle_settings_mouse(m),
             _ => {}
         }
-        (self.show_help, self.help_scroll) != before
+        self.settings_snap() != before
     }
 
-    fn handle_theme_event(&mut self, evt: Event) -> bool {
-        match evt {
-            Event::Key(k) => {
-                if k.code == KeyCode::F(2) {
-                    self.close_theme(true);
-                    true
-                } else if let Some(ek) = map_editor_key(k) {
-                    let shift = k.modifiers.contains(KeyModifiers::SHIFT);
-                    if self.theme_editor.is_some() {
-                        self.dispatch_theme_editor(ek, shift);
-                    } else {
-                        self.dispatch_theme_picker(ek);
-                    }
-                    true
-                } else {
-                    false
-                }
+    fn handle_settings_key(&mut self, k: event::KeyEvent) {
+        if k.code == KeyCode::Char('q') && k.modifiers.contains(KeyModifiers::CONTROL) {
+            self.request_quit();
+            return;
+        }
+        if matches!(k.code, KeyCode::F(1) | KeyCode::F(2)) {
+            self.close_theme(true);
+            return;
+        }
+        if k.code == KeyCode::PageDown {
+            self.scroll_settings(10);
+            return;
+        }
+        if k.code == KeyCode::PageUp {
+            self.scroll_settings(-10);
+            return;
+        }
+        if self.settings_section_key(k) {
+            return;
+        }
+        if self.settings_nav == SETTINGS_HELP {
+            match k.code {
+                KeyCode::Esc => self.close_theme(true),
+                KeyCode::Down | KeyCode::Char('j') => self.scroll_settings(1),
+                KeyCode::Up | KeyCode::Char('k') => self.scroll_settings(-1),
+                KeyCode::Home | KeyCode::Char('g') => self.help_scroll = 0,
+                KeyCode::End | KeyCode::Char('G') => self.help_scroll = self.help_scroll_max,
+                _ => {}
             }
-            Event::Mouse(m) => match m.kind {
-                MouseEventKind::ScrollUp => {
-                    if self.theme_editor.is_some() || self.theme_picker.is_some() {
-                        self.scroll_theme_selection(-1)
-                    } else {
-                        let before = self.theme_scroll;
-                        self.theme_scroll = self.theme_scroll.saturating_sub(3);
-                        self.theme_scroll != before
-                    }
-                }
-                MouseEventKind::ScrollDown => {
-                    if self.theme_editor.is_some() || self.theme_picker.is_some() {
-                        self.scroll_theme_selection(1)
-                    } else {
-                        let before = self.theme_scroll;
-                        self.theme_scroll = self
-                            .theme_scroll
-                            .saturating_add(3)
-                            .min(self.theme_scroll_max);
-                        self.theme_scroll != before
-                    }
-                }
-                _ => false,
-            },
-            _ => false,
+            return;
+        }
+        if self.settings_nav != SETTINGS_THEMES {
+            return;
+        }
+        if self.save_target_key(k) {
+            self.toggle_save_target();
+            return;
+        }
+        if let Some(ek) = map_editor_key(k) {
+            let shift = k.modifiers.contains(KeyModifiers::SHIFT);
+            if self.theme_editor.is_some() {
+                self.dispatch_theme_editor(ek, shift);
+            } else {
+                self.dispatch_theme_picker(ek);
+            }
+        }
+    }
+
+    fn handle_settings_mouse(&mut self, m: event::MouseEvent) {
+        match m.kind {
+            MouseEventKind::ScrollUp => self.scroll_settings(-3),
+            MouseEventKind::ScrollDown => self.scroll_settings(3),
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.settings_nav_click(m.column, m.row);
+            }
+            _ => {}
+        }
+    }
+
+    fn settings_snap(&self) -> SettingsSnap {
+        SettingsSnap {
+            open: self.show_theme,
+            nav: self.settings_nav,
+            scroll: self.help_scroll,
+            quit: self.should_quit,
+            modal: self.modal.is_some(),
+            toasts: self.toasts.len(),
+            editor: self.theme_editor.as_ref().map(|editor| {
+                (
+                    editor.selected,
+                    editor.editing_hex,
+                    editor.channel,
+                    editor.save_target,
+                    editor.hex_draft.clone(),
+                    editor.palette.clone(),
+                )
+            }),
+            picker: self
+                .theme_picker
+                .as_ref()
+                .map(|picker| (picker.selected, picker.save_target, picker.palette.clone())),
+            base: super::theme::color_to_hex(self.theme.base_background),
+            body: super::theme::color_to_hex(self.theme.body_background),
         }
     }
 
@@ -276,8 +278,22 @@ impl App {
         true
     }
 
+    pub(in crate::tui) fn toggle_settings(&mut self) {
+        if self.show_theme {
+            self.close_theme(true);
+        } else {
+            self.open_theme_ui();
+        }
+    }
+
     fn open_theme_ui(&mut self) {
+        if self.show_theme {
+            return;
+        }
         self.show_theme = true;
+        self.settings_nav = SETTINGS_THEMES;
+        self.settings_follow = true;
+        self.help_scroll = 0;
         let palette = super::theme::palette_from_theme(&self.theme);
         let picker = ldnddev_theme::ThemePicker::new(
             palette.clone(),
@@ -296,20 +312,98 @@ impl App {
         }
     }
 
-    fn scroll_theme_selection(&mut self, delta: i32) -> bool {
-        if let Some(editor) = self.theme_editor.as_mut() {
-            let before = editor.selected;
-            let next = editor.selected as i32 + delta;
-            editor.select(next.max(0) as usize);
-            return editor.selected != before;
+    fn scroll_settings(&mut self, delta: i32) {
+        self.settings_follow = false;
+        if delta < 0 {
+            self.help_scroll = self.help_scroll.saturating_sub(delta.unsigned_abs() as u16);
+        } else {
+            self.help_scroll = self
+                .help_scroll
+                .saturating_add(delta as u16)
+                .min(self.help_scroll_max);
+        }
+    }
+
+    fn settings_section_key(&mut self, k: event::KeyEvent) -> bool {
+        let Some(dir) = settings_section_dir(k) else {
+            return false;
+        };
+        let tab = matches!(k.code, KeyCode::Tab | KeyCode::BackTab);
+        if !tab && editing_theme_hex(self) {
+            return false;
+        }
+        let next = (self.settings_nav as isize + dir).clamp(0, SETTINGS_LAST as isize) as u8;
+        if next != self.settings_nav {
+            self.settings_nav = next;
+            self.help_scroll = 0;
+            self.settings_follow = true;
+        }
+        true
+    }
+
+    fn save_target_key(&self, k: event::KeyEvent) -> bool {
+        if editing_theme_hex(self) || k.modifiers.contains(KeyModifiers::CONTROL) {
+            return false;
+        }
+        matches!(k.code, KeyCode::Char('t') | KeyCode::Char('T'))
+    }
+
+    fn toggle_save_target(&mut self) {
+        let from_editor = if let Some(editor) = self.theme_editor.as_mut() {
+            editor.save_target = editor.save_target.toggled();
+            Some(editor.save_target)
+        } else {
+            None
+        };
+        if let Some(target) = from_editor {
+            if let Some(picker) = self.theme_picker.as_mut() {
+                picker.save_target = target;
+            }
+            return;
         }
         if let Some(picker) = self.theme_picker.as_mut() {
-            let before = picker.selected;
-            let next = picker.selected as i32 + delta;
-            picker.select(next.max(0) as usize);
-            return picker.selected != before;
+            picker.save_target = picker.save_target.toggled();
         }
-        false
+    }
+
+    fn settings_nav_click(&mut self, col: u16, row: u16) -> bool {
+        let area = self.settings_nav_area;
+        if area.width == 0 || area.height == 0 {
+            return false;
+        }
+        let inside = col >= area.x
+            && row >= area.y
+            && col < area.x.saturating_add(area.width)
+            && row < area.y.saturating_add(area.height);
+        if !inside {
+            return false;
+        }
+        let rel = usize::from(row.saturating_sub(area.y));
+        if rel >= SETTINGS_NAV.len() {
+            return true;
+        }
+        self.settings_nav = rel as u8;
+        self.help_scroll = 0;
+        self.settings_follow = true;
+        true
+    }
+
+    fn preview_theme_row(&mut self) {
+        let outcome = {
+            let Some(picker) = self.theme_picker.as_mut() else {
+                return;
+            };
+            picker.preview_selected()
+        };
+        match outcome {
+            ldnddev_theme::PickerOutcome::Applied => {
+                if let Some(picker) = &self.theme_picker {
+                    super::theme::apply_palette(&mut self.theme, &picker.palette);
+                }
+            }
+            ldnddev_theme::PickerOutcome::Error(msg) => self.push_toast(ToastLevel::Error, msg),
+            _ => {}
+        }
     }
 
     fn dispatch_theme_picker(&mut self, ek: ldnddev_theme::EditorKey) {
@@ -349,7 +443,12 @@ impl App {
                 self.push_toast(ToastLevel::Error, msg);
             }
             ldnddev_theme::PickerOutcome::Closed { .. } => self.close_theme(true),
-            ldnddev_theme::PickerOutcome::None => {}
+            ldnddev_theme::PickerOutcome::None => {
+                if theme_motion(ek) {
+                    self.preview_theme_row();
+                    self.settings_follow = true;
+                }
+            }
         }
     }
 
@@ -384,10 +483,7 @@ impl App {
                 super::theme::apply_palette(&mut self.theme, palette);
                 self.theme_source = target.label().to_string();
                 self.follow_stamp = ldnddev_theme::follow_stamp(&self.omarchy_paths);
-                self.theme_editor = None;
-                self.theme_picker = None;
-                self.show_theme = false;
-                self.theme_scroll = 0;
+                self.close_theme(false);
                 self.push_toast(
                     ToastLevel::Success,
                     format!("Theme saved ({})", path.display()),
@@ -412,7 +508,10 @@ impl App {
         self.theme_picker = None;
         self.theme_editor = None;
         self.show_theme = false;
-        self.theme_scroll = 0;
+        self.settings_nav = SETTINGS_THEMES;
+        self.settings_follow = false;
+        self.help_scroll = 0;
+        self.settings_nav_area = Rect::default();
     }
 
     fn handle_tree_nav(&mut self, k: event::KeyEvent) -> bool {
@@ -603,9 +702,81 @@ impl App {
             ldnddev_theme::EditorOutcome::HexError(msg) => {
                 self.push_toast(ToastLevel::Error, msg);
             }
-            ldnddev_theme::EditorOutcome::None => {}
+            ldnddev_theme::EditorOutcome::None => {
+                let editing = self
+                    .theme_editor
+                    .as_ref()
+                    .is_some_and(|editor| editor.editing_hex);
+                if theme_motion(ek) && !editing {
+                    self.settings_follow = true;
+                }
+            }
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SettingsSnap {
+    open: bool,
+    nav: u8,
+    scroll: u16,
+    quit: bool,
+    modal: bool,
+    toasts: usize,
+    editor: Option<(
+        usize,
+        bool,
+        usize,
+        ldnddev_theme::ThemeSaveTarget,
+        String,
+        ldnddev_theme::Palette,
+    )>,
+    picker: Option<(
+        usize,
+        ldnddev_theme::ThemeSaveTarget,
+        ldnddev_theme::Palette,
+    )>,
+    base: String,
+    body: String,
+}
+
+fn editing_theme_hex(app: &App) -> bool {
+    app.theme_editor
+        .as_ref()
+        .is_some_and(|editor| editor.editing_hex)
+}
+
+fn settings_section_dir(k: event::KeyEvent) -> Option<isize> {
+    if k.modifiers.contains(KeyModifiers::CONTROL)
+        && matches!(k.code, KeyCode::Tab | KeyCode::BackTab)
+    {
+        return None;
+    }
+    match k.code {
+        KeyCode::BackTab => Some(-1),
+        KeyCode::Tab => {
+            if k.modifiers.contains(KeyModifiers::SHIFT) {
+                Some(-1)
+            } else {
+                Some(1)
+            }
+        }
+        KeyCode::Char(']') => Some(1),
+        KeyCode::Char('[') => Some(-1),
+        _ => None,
+    }
+}
+
+fn theme_motion(key: ldnddev_theme::EditorKey) -> bool {
+    matches!(
+        key,
+        ldnddev_theme::EditorKey::Down
+            | ldnddev_theme::EditorKey::Up
+            | ldnddev_theme::EditorKey::Char('j')
+            | ldnddev_theme::EditorKey::Char('k')
+            | ldnddev_theme::EditorKey::Char('g')
+            | ldnddev_theme::EditorKey::Char('G')
+    )
 }
 
 fn map_editor_key(k: crossterm::event::KeyEvent) -> Option<ldnddev_theme::EditorKey> {
@@ -618,6 +789,8 @@ fn map_editor_key(k: crossterm::event::KeyEvent) -> Option<ldnddev_theme::Editor
         KeyCode::Enter => ldnddev_theme::EditorKey::Enter,
         KeyCode::Esc => ldnddev_theme::EditorKey::Esc,
         KeyCode::Backspace => ldnddev_theme::EditorKey::Backspace,
+        KeyCode::Home => ldnddev_theme::EditorKey::Char('g'),
+        KeyCode::End => ldnddev_theme::EditorKey::Char('G'),
         KeyCode::Char(c) => ldnddev_theme::EditorKey::Char(c),
         _ => return None,
     })

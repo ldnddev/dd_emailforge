@@ -16,9 +16,10 @@ impl App {
         }
 
         if let Event::Key(key) = &evt {
-            if key.code == KeyCode::F(1) {
-                self.show_help = true;
-                self.help_scroll = 0;
+            if matches!(key.code, KeyCode::F(1) | KeyCode::F(2))
+                && !matches!(self.modal, Some(Modal::ConfirmPrompt { .. }))
+            {
+                self.toggle_settings();
                 return Some(ModalResult::Continue);
             }
             if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {

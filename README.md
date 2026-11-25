@@ -4,7 +4,7 @@ Terminal-UI email template builder. Edit a typed `template.json`, export strict 
 
 **Tutorial (setup, install, TUI, screenshots):** [ldnddev.github.io/dd_emailforge](https://ldnddev.github.io/dd_emailforge/)
 
-Current release: **0.9.9**.
+Current release: **0.9.10**.
 
 ## Install
 
@@ -12,7 +12,7 @@ Current release: **0.9.9**.
 curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash
 ```
 
-That detects OS/arch, downloads the matching GitHub Release (`linux`/`darwin` × `x86_64`/`aarch64`), checks the published sha256, and installs `$HOME/.local/bin/dd_emailforge`. On Linux it also writes `~/.local/share/applications/dd_emailforge.desktop` (or `$XDG_DATA_HOME/applications/` when that is set) so the TUI shows up in the application menu. Theme → `$HOME/.config/ldnddev/` (an existing theme is left alone). Pin a version with `VERSION=v0.9.9`. Uninstall removes the binary, that launcher, the theme, and empty library directories. Saved templates stay. Pipe the same script with `bash -s -- uninstall`.
+That detects OS/arch, downloads the matching GitHub Release (`linux`/`darwin` × `x86_64`/`aarch64`), checks the published sha256, and installs `$HOME/.local/bin/dd_emailforge`. On Linux it also writes `~/.local/share/applications/dd_emailforge.desktop` (or `$XDG_DATA_HOME/applications/` when that is set) so the TUI shows up in the application menu. Theme → `$HOME/.config/ldnddev/` (an existing theme is left alone). Pin a version with `VERSION=v0.9.10`. Uninstall removes the binary, that launcher, and empty library directories. It leaves `dd_emailforge_theme.yml` in place. Saved templates stay. Pipe the same script with `bash -s -- uninstall`.
 
 From a clone (builds with cargo):
 

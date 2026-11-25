@@ -1,12 +1,13 @@
-//! Frame layout: header, empty body, footer, F1/F2 overlays, toasts.
+//! Frame layout: header, body, footer, Settings sheet, modals, toasts.
 use super::details::{DetailHit, readable_fg};
-use super::help::{build_help_text, build_theme_text, count_wrapped_lines};
+use super::help::build_help_text;
 use super::tree::TreeId;
 use super::*;
 
 impl App {
     pub(super) fn draw(&mut self, frame: &mut ratatui::Frame) {
         self.prune_toasts();
+        self.settings_nav_area = Rect::default();
 
         frame.render_widget(Block::default().style(self.theme.app_shell), frame.area());
 
@@ -48,28 +49,15 @@ impl App {
         let footer = Paragraph::new(footer_text).style(self.theme.app_shell);
         frame.render_widget(footer, root[2]);
 
-        self.render_modal(frame);
-
-        if self.show_help {
-            self.render_scroll_modal(
-                frame,
-                "Key & Mouse bindings (F1 / Esc to close, j/k or arrows to scroll)",
-                true,
-            );
+        let confirm_up = matches!(self.modal, Some(Modal::ConfirmPrompt { .. }));
+        if !confirm_up {
+            self.render_modal(frame);
         }
-
         if self.show_theme {
-            if let Some(editor) = &self.theme_editor {
-                self.render_theme_editor(frame, editor);
-            } else if let Some(picker) = &self.theme_picker {
-                self.render_theme_picker(frame, picker);
-            } else {
-                self.render_scroll_modal(
-                    frame,
-                    "Theme (F2 / Esc to close, j/k or arrows to scroll)",
-                    false,
-                );
-            }
+            self.render_settings(frame, root[1]);
+        }
+        if confirm_up {
+            self.render_modal(frame);
         }
 
         self.render_toasts(frame, frame.area());
@@ -294,240 +282,326 @@ impl App {
         }
     }
 
-    fn render_theme_picker(&self, frame: &mut ratatui::Frame, picker: &ldnddev_theme::ThemePicker) {
-        use ldnddev_theme::PickerRow;
-        let area = centered_rect(80, 80, frame.area());
-        frame.render_widget(Clear, area);
-        let mut lines = vec![
-            Line::from(format!(
-                "Save: {} (Tab)    Enter apply    e edit colors    s save    Esc revert",
-                picker.save_target.label()
-            )),
-            Line::from(""),
-        ];
-        let view_h = area.height.saturating_sub(5) as usize;
-        for (idx, row) in picker
-            .rows
-            .iter()
-            .enumerate()
-            .skip(picker.scroll)
-            .take(view_h.max(1))
-        {
-            let (label, detail) = match row {
-                PickerRow::Follow { name } => ("Follow desktop".to_string(), name.clone()),
-                PickerRow::Theme(theme) => (theme.name.clone(), theme.mode.label().to_string()),
-                PickerRow::Custom => ("Custom".to_string(), "built-in".to_string()),
-            };
-            let cursor = if idx == picker.selected { ">" } else { " " };
-            let style = if idx == picker.selected {
-                Style::default()
-                    .fg(self.theme.text_active_focus)
-                    .bg(self.theme.selected_background)
-            } else {
-                Style::default().fg(self.theme.modal_text)
-            };
-            lines.push(Line::from(Span::styled(
-                format!("{cursor} {label:<22} {detail}"),
-                style,
-            )));
+    fn render_settings(&mut self, frame: &mut ratatui::Frame, body: Rect) {
+        use ldnddev_theme::{PickerRow, ThemeEditorRow, theme_editor_rows};
+        if body.width == 0 || body.height == 0 {
+            return;
         }
-        frame.render_widget(
-            Paragraph::new(lines).block(
-                Block::default()
-                    .title("F2 Themes")
-                    .borders(Borders::ALL)
-                    .border_style(self.theme.active_border)
-                    .title_style(
-                        Style::default()
-                            .fg(self.theme.modal_header)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                    .style(
-                        Style::default()
-                            .bg(self.theme.modal_background)
-                            .fg(self.theme.modal_text),
-                    ),
-            ),
-            area,
-        );
-    }
-
-    fn render_theme_editor(&self, frame: &mut ratatui::Frame, editor: &ldnddev_theme::ThemeEditor) {
-        use ldnddev_theme::{ThemeEditorRow, theme_editor_rows};
-        let area = centered_rect(80, 80, frame.area());
-        frame.render_widget(Clear, area);
-        let rows = theme_editor_rows(&editor.fields);
-        let channel = ["R", "G", "B"][editor.channel.min(2)];
-        let target = editor.save_target.label().to_uppercase();
-        let esc = if self.theme_picker.is_some() {
-            "Esc back"
-        } else {
-            "Esc revert"
+        let width = (body.width / 2).max(1).min(body.width);
+        let area = Rect {
+            x: body.x + body.width.saturating_sub(width),
+            y: body.y,
+            width,
+            height: body.height,
         };
-        let mut lines = vec![
-            Line::from(format!(
-                "Save: {target} (Tab)   Channel: {channel} ([/])   Y save   R reset   {esc}"
-            )),
-            Line::from(if editor.editing_hex {
-                format!("Hex: {}█", editor.hex_draft)
-            } else {
-                format!("Hex: {}   Enter / +/- ", editor.hex_draft)
-            }),
-            Line::from(""),
-        ];
-        let view_h = area.height.saturating_sub(6) as usize;
-        let start = rows
-            .iter()
-            .position(|row| match row {
-                ThemeEditorRow::Color(idx) => *idx >= editor.scroll,
-                ThemeEditorRow::Header(_) => false,
-            })
-            .unwrap_or(0);
-        let start = if start > 0 && matches!(rows[start - 1], ThemeEditorRow::Header(_)) {
-            start - 1
-        } else {
-            start
-        };
-        for row in rows.iter().skip(start).take(view_h.max(1)) {
-            match row {
-                ThemeEditorRow::Header(name) => lines.push(Line::from(*name)),
-                ThemeEditorRow::Color(idx) => {
-                    let field = editor.fields[*idx];
-                    let hex = editor
-                        .palette
-                        .get(field.key)
-                        .map(|c| c.to_hex())
-                        .unwrap_or_else(|| "#000000".into());
-                    let cursor = if *idx == editor.selected { ">" } else { " " };
-                    lines.push(Line::from(format!("{cursor} {:<22} {hex}", field.key)));
-                }
-            }
-        }
-        frame.render_widget(
-            Paragraph::new(lines).block(
-                Block::default()
-                    .title("F2 Theme editor")
-                    .borders(Borders::ALL)
-                    .border_style(self.theme.active_border)
-                    .style(
-                        Style::default()
-                            .bg(self.theme.modal_background)
-                            .fg(self.theme.modal_text),
-                    ),
-            ),
-            area,
-        );
-    }
-
-    fn render_scroll_modal(&mut self, frame: &mut ratatui::Frame, title: &str, is_help: bool) {
-        let area = centered_rect(80, 80, frame.area());
         frame.render_widget(Clear, area);
         let block = Block::default()
-            .title(title.to_string())
+            .title(" Settings ")
             .borders(Borders::ALL)
-            .style(
-                Style::default()
-                    .fg(self.theme.modal_text)
-                    .bg(self.theme.modal_background),
-            )
-            .border_style(Style::default().fg(self.theme.border_active))
+            .border_style(self.theme.active_border)
             .title_style(
                 Style::default()
                     .fg(self.theme.modal_header)
                     .add_modifier(Modifier::BOLD),
+            )
+            .style(
+                Style::default()
+                    .bg(self.theme.modal_background)
+                    .fg(self.theme.modal_text),
             );
         let inner = block.inner(area);
         frame.render_widget(block, area);
-
-        let scrollbar_width: u16 = 1;
-        let body_w = inner.width.saturating_sub(scrollbar_width + 1);
-        let body_area = Rect {
-            x: inner.x,
-            y: inner.y,
-            width: body_w,
-            height: inner.height,
-        };
-
-        let text = if is_help {
-            build_help_text(&self.theme, body_w as usize)
-        } else {
-            build_theme_text(
-                &self.theme,
-                &self.theme_source,
-                &self.theme_status,
-                body_w as usize,
-            )
-        };
-        let wrapped_total = count_wrapped_lines(&text, body_w as usize);
-        let visible = inner.height as usize;
-        let max_scroll = wrapped_total.saturating_sub(visible) as u16;
-        if is_help {
-            self.help_scroll_max = max_scroll;
-            if self.help_scroll > max_scroll {
-                self.help_scroll = max_scroll;
-            }
-        } else {
-            self.theme_scroll_max = max_scroll;
-            if self.theme_scroll > max_scroll {
-                self.theme_scroll = max_scroll;
-            }
+        if inner.width == 0 || inner.height == 0 {
+            return;
         }
-        let scroll = if is_help {
-            self.help_scroll
-        } else {
-            self.theme_scroll
-        };
-
-        let body = Paragraph::new(text)
-            .style(
-                Style::default()
-                    .fg(self.theme.modal_text)
-                    .bg(self.theme.modal_background),
-            )
-            .wrap(Wrap { trim: false })
-            .scroll((scroll, 0));
-        frame.render_widget(body, body_area);
-
-        if (wrapped_total as u16) > inner.height {
-            let track_x = inner.x + inner.width.saturating_sub(1);
-            for row in 0..inner.height {
-                let cell = Paragraph::new("│").style(
-                    Style::default()
-                        .fg(self.theme.scrollbar)
-                        .bg(self.theme.modal_background),
-                );
-                frame.render_widget(
-                    cell,
-                    Rect {
-                        x: track_x,
-                        y: inner.y + row,
-                        width: 1,
-                        height: 1,
-                    },
-                );
-            }
-            let total_h = inner.height as usize;
-            let thumb_h = ((total_h * total_h) / wrapped_total.max(1)).max(1);
-            let scroll_range = wrapped_total.saturating_sub(total_h).max(1);
-            let thumb_top = ((scroll as usize) * total_h.saturating_sub(thumb_h)) / scroll_range;
-            for i in 0..thumb_h {
-                let cell = Paragraph::new("█").style(
-                    Style::default()
-                        .fg(self.theme.scrollbar_hover)
-                        .bg(self.theme.modal_background),
-                );
-                frame.render_widget(
-                    cell,
-                    Rect {
-                        x: track_x,
-                        y: inner.y + (thumb_top + i) as u16,
-                        width: 1,
-                        height: 1,
-                    },
-                );
-            }
+        if self.settings_nav as usize >= SETTINGS_NAV.len() {
+            self.settings_nav = SETTINGS_THEMES;
         }
+
+        let nav_w = {
+            let spare = inner.width.saturating_sub(8);
+            if spare == 0 {
+                1.min(inner.width)
+            } else {
+                14.min(spare).max(1)
+            }
+        };
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(nav_w), Constraint::Min(1)])
+            .split(inner);
+        let nav = cols[0];
+        let page = cols[1];
+        self.settings_nav_area = nav;
+        paint_settings_nav(frame, self, nav);
+
+        let section = SETTINGS_NAV
+            .get(self.settings_nav as usize)
+            .copied()
+            .unwrap_or("Themes");
+        let title_h = u16::from(page.height > 0);
+        let title_area = Rect {
+            x: page.x,
+            y: page.y,
+            width: page.width,
+            height: title_h,
+        };
+        let content = Rect {
+            x: page.x,
+            y: page.y.saturating_add(title_h),
+            width: page.width,
+            height: page.height.saturating_sub(title_h),
+        };
+        if title_h > 0 {
+            let shown: String = section.chars().take(page.width as usize).collect();
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    shown,
+                    Style::default()
+                        .fg(self.theme.modal_header)
+                        .add_modifier(Modifier::BOLD),
+                )))
+                .style(
+                    Style::default()
+                        .bg(self.theme.modal_background)
+                        .fg(self.theme.modal_header),
+                ),
+                title_area,
+            );
+        }
+
+        if self.settings_nav == SETTINGS_HELP {
+            let lines = build_help_text(&self.theme, content.width.max(1) as usize).lines;
+            self.paint_settings_lines(frame, content, lines, None);
+            return;
+        }
+
+        let editor = self.theme_editor.clone();
+        let picker = self.theme_picker.clone();
+        let box_w = (content.width as usize).max(2);
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        let mut selected_line = None;
+        let rule = Style::default().fg(self.theme.border_default);
+        let header = Style::default()
+            .fg(self.theme.modal_header)
+            .add_modifier(Modifier::BOLD);
+        let hint = if let Some(editor) = &editor {
+            let target = editor.save_target.label();
+            if picker.is_some() {
+                format!("Tab section   j/k move   t target   y save {target}   R reset   Esc back")
+            } else {
+                format!(
+                    "Tab section   j/k move   t target   y save {target}   R reset   Esc revert"
+                )
+            }
+        } else {
+            "Tab section   j/k move   Enter apply   e colors   y save   t target   Esc revert"
+                .to_string()
+        };
+        lines.push(Line::from(Span::styled(
+            hint,
+            Style::default().fg(self.theme.text_secondary),
+        )));
+
+        if let Some(editor) = &editor {
+            if editor.editing_hex {
+                lines.push(Line::from(format!("Hex: {}█", editor.hex_draft)));
+            } else {
+                lines.push(Line::from(format!(
+                    "Hex: {}   Enter edit",
+                    editor.hex_draft
+                )));
+            }
+            let selected_style = Style::default()
+                .fg(self.theme.text_active_focus)
+                .bg(self.theme.selected_background);
+            let idle = Style::default().fg(self.theme.modal_text);
+            let mut open = false;
+            for row in theme_editor_rows(&editor.fields) {
+                match row {
+                    ThemeEditorRow::Header(name) => {
+                        if open {
+                            lines.push(settings_bottom(box_w, rule));
+                        }
+                        lines.push(Line::from(""));
+                        lines.push(settings_top(name, box_w, rule, header));
+                        open = true;
+                    }
+                    ThemeEditorRow::Color(idx) => {
+                        if idx == editor.selected {
+                            selected_line = Some(lines.len());
+                        }
+                        let field = editor.fields[idx];
+                        let hex = editor
+                            .palette
+                            .get(field.key)
+                            .map(|color| color.to_hex())
+                            .unwrap_or_else(|| "#000000".into());
+                        let cursor = if idx == editor.selected { ">" } else { " " };
+                        let style = if idx == editor.selected {
+                            selected_style
+                        } else {
+                            idle
+                        };
+                        lines.push(settings_row(
+                            &format!("{cursor} {:<22} {hex}", field.key),
+                            box_w,
+                            rule,
+                            style,
+                        ));
+                    }
+                }
+            }
+            if open {
+                lines.push(settings_bottom(box_w, rule));
+            }
+        } else if let Some(picker) = &picker {
+            lines.push(Line::from(""));
+            lines.push(settings_top("Themes", box_w, rule, header));
+            let selected_style = Style::default()
+                .fg(self.theme.text_active_focus)
+                .bg(self.theme.selected_background);
+            let idle = Style::default().fg(self.theme.modal_text);
+            for (idx, row) in picker.rows.iter().enumerate() {
+                if idx == picker.selected {
+                    selected_line = Some(lines.len());
+                }
+                let (label, detail) = match row {
+                    PickerRow::Follow { name } => ("Follow desktop".to_string(), name.clone()),
+                    PickerRow::Theme(theme) => (theme.name.clone(), theme.mode.label().to_string()),
+                    PickerRow::Custom => ("Custom".to_string(), "built-in".to_string()),
+                };
+                let cursor = if idx == picker.selected { ">" } else { " " };
+                let style = if idx == picker.selected {
+                    selected_style
+                } else {
+                    idle
+                };
+                lines.push(settings_row(
+                    &format!("{cursor} {label:<22} {detail}"),
+                    box_w,
+                    rule,
+                    style,
+                ));
+            }
+            lines.push(settings_bottom(box_w, rule));
+        }
+
+        self.paint_settings_lines(frame, content, lines, selected_line);
     }
+
+    fn paint_settings_lines(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: Rect,
+        lines: Vec<Line<'static>>,
+        selected_line: Option<usize>,
+    ) {
+        if area.width == 0 || area.height == 0 {
+            self.help_scroll_max = 0;
+            self.help_scroll = 0;
+            return;
+        }
+        let view_h = area.height as usize;
+        let max_scroll = lines.len().saturating_sub(view_h) as u16;
+        self.help_scroll_max = max_scroll;
+        if self.settings_follow {
+            if let Some(sel) = selected_line {
+                let top = self.help_scroll as usize;
+                if sel < top {
+                    self.help_scroll = sel as u16;
+                } else if sel >= top + view_h {
+                    self.help_scroll = (sel + 1 - view_h) as u16;
+                }
+            }
+            self.settings_follow = false;
+        }
+        if self.help_scroll > max_scroll {
+            self.help_scroll = max_scroll;
+        }
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(
+                    Style::default()
+                        .fg(self.theme.modal_text)
+                        .bg(self.theme.modal_background),
+                )
+                .scroll((self.help_scroll, 0)),
+            area,
+        );
+    }
+}
+
+fn paint_settings_nav(frame: &mut ratatui::Frame, app: &App, nav: Rect) {
+    let block = Block::default()
+        .borders(Borders::RIGHT)
+        .border_style(Style::default().fg(app.theme.border_default))
+        .style(
+            Style::default()
+                .bg(app.theme.body_background)
+                .fg(app.theme.modal_text),
+        );
+    let inner = block.inner(nav);
+    frame.render_widget(block, nav);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    let selected_style = Style::default()
+        .fg(app.theme.text_active_focus)
+        .bg(app.theme.selected_background);
+    let idle = Style::default()
+        .fg(app.theme.modal_text)
+        .bg(app.theme.body_background);
+    let width = inner.width as usize;
+    let mut lines = Vec::new();
+    for (index, label) in SETTINGS_NAV.iter().enumerate() {
+        let on = app.settings_nav == index as u8;
+        let marker = if on { ">" } else { " " };
+        let text: String = format!("{marker} {label}").chars().take(width).collect();
+        let style = if on { selected_style } else { idle };
+        lines.push(Line::from(Span::styled(text, style)));
+    }
+    frame.render_widget(
+        Paragraph::new(lines).style(
+            Style::default()
+                .bg(app.theme.body_background)
+                .fg(app.theme.modal_text),
+        ),
+        inner,
+    );
+}
+
+fn settings_top(title: &str, width: usize, edge: Style, title_style: Style) -> Line<'static> {
+    let width = width.max(2);
+    let inner = width - 2;
+    let mut label = format!(" {title} ");
+    if label.chars().count() > inner {
+        label = label.chars().take(inner).collect();
+    }
+    let pad = inner - label.chars().count();
+    Line::from(vec![
+        Span::styled("┌", edge),
+        Span::styled(label, title_style),
+        Span::styled(format!("{}┐", "─".repeat(pad)), edge),
+    ])
+}
+
+fn settings_bottom(width: usize, edge: Style) -> Line<'static> {
+    let width = width.max(2);
+    Line::from(Span::styled(format!("└{}┘", "─".repeat(width - 2)), edge))
+}
+
+fn settings_row(body: &str, width: usize, edge: Style, fill: Style) -> Line<'static> {
+    let width = width.max(2);
+    let inner = width - 2;
+    let mut text: String = body.chars().take(inner).collect();
+    let pad = inner - text.chars().count();
+    text.push_str(&" ".repeat(pad));
+    Line::from(vec![
+        Span::styled("│", edge),
+        Span::styled(text, fill),
+        Span::styled("│", edge),
+    ])
 }
 
 fn hit_at<'a>(hits: &'a [DetailHit], line_idx: usize, x: usize) -> Option<&'a DetailHit> {

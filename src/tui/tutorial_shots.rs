@@ -72,6 +72,7 @@ fn formedit_app() -> App {
 fn help_app() -> App {
     let mut app = shot_app(Some(Template::starter(StarterKind::Welcome, "welcome")));
     send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Char(']'), KeyModifiers::NONE);
     app
 }
 

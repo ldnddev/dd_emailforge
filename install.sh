@@ -5,26 +5,35 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash -s -- uninstall
-#   ./install.sh                # clone: cargo build --release and install
+#   ./install.sh                # clone: ask terminal, window, or both, then build
 #   ./install.sh install        # same as above
-#   ./install.sh --from-release # download the package for this machine
+#   ./install.sh --tui          # terminal binary only
+#   ./install.sh --gui          # window only (does not replace the theme)
+#   ./install.sh --both         # terminal and window
+#   ./install.sh --from-release # download the terminal package for this machine
 #   ./install.sh --from-source  # always cargo-build (clones the repo if needed)
-#   ./install.sh uninstall      # remove the binary, launcher, theme, and empty dirs
+#   ./install.sh uninstall      # ask which binaries to remove; leave the theme file
 #   ./install.sh --help
+#
+#   INSTALL_GUI=1               # same as --both when no --tui/--gui/--both is passed
 #
 # Override defaults via env vars:
 #   PREFIX=$HOME/.local                       # binary lives at $PREFIX/bin/dd_emailforge
 #   CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/ldnddev
 #   XDG_DATA_HOME=$HOME/.local/share          # Linux launcher dir is $XDG_DATA_HOME/applications
-#   VERSION=latest                            # or v0.9.9 / 0.9.9
+#   VERSION=latest                            # or v0.9.10 / 0.9.10
 #   REPO=ldnddev/dd_emailforge
 #   DOWNLOAD_BASE=https://…/download          # optional mirror (also accepts file://)
 #   GITHUB_TOKEN=…                            # optional; private repos / higher rate limits
 #
-# On Linux, install writes a desktop launcher for the TUI. Pass the same
-# PREFIX, BIN_DIR, and XDG_DATA_HOME to uninstall that you used to install.
-# Re-run safe: existing themes are left alone on install; the binary and
-# launcher are overwritten. Saved templates are left in place on uninstall.
+# On Linux, install writes a desktop launcher for each binary it installs.
+# The terminal launcher sets Terminal=true. The window launcher sets
+# Terminal=false. Pass the same PREFIX, BIN_DIR, and XDG_DATA_HOME to
+# uninstall that you used to install.
+# Re-run safe: existing themes are left alone on install; the chosen binary
+# and launcher are overwritten. Uninstall removes only that binary and its
+# desktop file. It leaves the theme file, saved templates, and the
+# last-opened path. The window needs Vulkan and Wayland or X11.
 
 set -euo pipefail
 
@@ -33,7 +42,9 @@ PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="${BIN_DIR:-$PREFIX/bin}"
 CONFIG_DIR="${CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/ldnddev}"
 BIN_NAME="dd_emailforge"
+GUI_NAME="dd_emailforge-gui"
 THEME_FILE="dd_emailforge_theme.yml"
+GUI_WMCLASS="dev.ldnddev.dd_emailforge"
 LIBRARY_DIR="$CONFIG_DIR/dd_emailforge/templates"
 REPO="${REPO:-ldnddev/dd_emailforge}"
 VERSION="${VERSION:-latest}"
@@ -56,6 +67,99 @@ require() {
     command -v "$1" >/dev/null 2>&1 || { red "Required command not found: $1"; exit 1; }
 }
 
+# ldnddev wordmark, half-block art of the white-on-black mark.
+# Printed only on a terminal so a captured log stays plain text.
+print_mark() {
+    [ -t 1 ] || return 0
+    printf '\033[40;97m'
+    cat <<'EOF'
+
+█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█
+█  ██                ██                         ██  █
+█  ██                ██                         ██  █
+█  ██         ▄▄▄▄▄▄ ██     ▄▄▄▄▄▄       ▄▄▄▄▄▄ ██  █
+█  ██       ▄██▀▀▀▀▀███  ▄██████████▄  ▄██▀▀▀▀▀███  █
+█  ██      ██▀       ██  ██        ██ ██▀       ██  █
+█  ██      ██        ██  ██        ██ ██        ██  █
+█  ██      ▀█▄       ██  ██        ██ ▀█▄       ██  █
+█  ▀█▄▄▄▄▄  ▀██▄▄▄▄██▀   ██        ██  ▀██▄▄▄▄██▀   █
+█   ▀▀▀▀▀▀    ▀▀▀▀▀▀     ▀▀        ▀▀    ▀▀▀▀▀▀     █
+█                                                   █
+█                     ██                            █
+█                     ██                            █
+█              ▄▄▄▄▄▄ ██     ▄▄▄▄▄▄    ▄▄      ▄▄▄  █
+█            ▄██▀▀▀▀▀███   ██▀▀▀▀███   ██     ▄██   █
+█           ██▀       ██  ██    ██▀ ▄▄ ██    ▄██    █
+█           ██        ██  ██  ▄██   ██ ██    ██     █
+█           ▀█▄       ██  ██▄██▀   ▄█▀ ██  ▄██      █
+█  ▄▄▄▄▄▄▄▄  ▀██▄▄▄▄██▀    ▀███▄▄▄██▀  ██▄██▀       █
+█  ▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀        ▀▀▀▀▀▀    ▀▀▀▀         █
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+EOF
+    printf '\033[0m\n'
+}
+
+# The device node is mode rw-rw-rw, so -r/-w stay true with no controlling
+# terminal. Opening it is the check that matters.
+have_tty() {
+    { : <>/dev/tty; } 2>/dev/null
+}
+
+# Read 1, 2, or 3 from the terminal. stdout is tui, gui, or both.
+# $1 is the verb shown in the question. $2 is the default number.
+# Returns 1 when the terminal cannot be used. main captures stdout, and a
+# failed redirect in that capture does not abort under set -e, so every
+# /dev/tty failure has to be an explicit status.
+ask_choice() {
+    local verb=$1 default=$2 answer choice
+    while true; do
+        {
+            printf '%s which program?\n' "$verb"
+            printf '%s\n' "  1) terminal (dd_emailforge)"
+            printf '%s\n' "  2) desktop window (dd_emailforge-gui)"
+            printf '%s\n' "  3) both"
+            printf 'Choice [%s]: ' "$default"
+        } >/dev/tty 2>/dev/null || return 1
+        if ! IFS= read -r answer </dev/tty 2>/dev/null; then
+            printf '\n' >/dev/tty 2>/dev/null || true
+            answer=$default
+        fi
+        choice=$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+        case "$choice" in
+            '') choice=$default ;;
+        esac
+        case "$choice" in
+            1|tui|terminal) printf '%s\n' tui; return 0 ;;
+            2|gui|window) printf '%s\n' gui; return 0 ;;
+            3|both) printf '%s\n' both; return 0 ;;
+            *) printf '%s\n' "Enter 1, 2, or 3." >/dev/tty 2>/dev/null || return 1 ;;
+        esac
+    done
+}
+
+# stdout is tui, gui, or both. Notices go to stderr so a capture stays one word.
+choose_target() {
+    local action=$1 explicit=$2
+    if [ -n "$explicit" ]; then
+        printf '%s\n' "$explicit"
+        return 0
+    fi
+    if have_tty; then
+        if [ "$action" = uninstall ]; then
+            ask_choice "Remove" 3 && return 0
+        else
+            ask_choice "Install" 1 && return 0
+        fi
+    fi
+    if [ "$action" = uninstall ]; then
+        printf '%s\n' "No terminal for a prompt. Removing both programs." >&2
+        printf '%s\n' both
+    else
+        printf '%s\n' "No terminal for a prompt. Installing the terminal app." >&2
+        printf '%s\n' tui
+    fi
+}
+
 usage() {
     cat <<'EOF'
 install.sh — install dd_emailforge from a GitHub Release package, or
@@ -64,25 +168,34 @@ build from source when run inside a clone.
 Usage:
   curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash
   curl -fsSL https://raw.githubusercontent.com/ldnddev/dd_emailforge/main/install.sh | bash -s -- uninstall
-  ./install.sh                # clone: cargo build --release and install
+  ./install.sh                # clone: ask terminal, window, or both
   ./install.sh install        # same as above
-  ./install.sh --from-release # download the package for this machine
+  ./install.sh --tui          # terminal binary only
+  ./install.sh --gui          # window only
+  ./install.sh --both         # terminal and window
+  ./install.sh --from-release # download the terminal package for this machine
   ./install.sh --from-source  # always cargo-build (clones the repo if needed)
-  ./install.sh uninstall      # remove the binary, launcher, theme, and empty dirs
+  ./install.sh uninstall      # ask which binaries to remove; leave the theme file
   ./install.sh --help
+
+INSTALL_GUI=1 is the same as --both when --tui, --gui, and --both are absent.
+With no terminal to answer, install selects the terminal app and uninstall
+removes both.
 
 Override defaults via env vars:
   PREFIX=$HOME/.local                       # binary lives at $PREFIX/bin/dd_emailforge
   CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/ldnddev
   XDG_DATA_HOME=$HOME/.local/share          # Linux launcher dir is $XDG_DATA_HOME/applications
-  VERSION=latest                            # or v0.9.9 / 0.9.9
+  VERSION=latest                            # or v0.9.10 / 0.9.10
   REPO=ldnddev/dd_emailforge
   DOWNLOAD_BASE=https://…/download          # optional mirror (also accepts file://)
   GITHUB_TOKEN=…                            # optional; private repos / higher rate limits
 
-On Linux, install writes a desktop launcher for the TUI. Pass the same
+On Linux, install writes a desktop launcher for each binary it installs.
+The window needs Vulkan and Wayland or X11. Pass the same
 PREFIX, BIN_DIR, and XDG_DATA_HOME to uninstall that you used to install.
-Saved templates and the last-opened path are left in place.
+Uninstall removes the chosen binary and the launcher. It leaves
+dd_emailforge_theme.yml, saved templates, and the last-opened path in place.
 
 Re-run safe: existing themes are left alone on install; the binary and
 launcher are overwritten.
@@ -281,7 +394,7 @@ desktop_quote() {
 }
 
 write_desktop() {
-    local dest="$1" bin="$2"
+    local dest="$1" bin="$2" name="$3" comment="$4" terminal="$5" startup="$6" wmclass="${7:-}"
     local exec_q try_q
     if [ -d "$dest" ]; then
         red "Refusing to overwrite directory $dest"
@@ -293,16 +406,19 @@ write_desktop() {
         printf '%s\n' "[Desktop Entry]"
         printf '%s\n' "Type=Application"
         printf '%s\n' "Version=1.0"
-        printf '%s\n' "Name=dd_emailforge"
+        printf '%s\n' "Name=${name}"
         printf '%s\n' "GenericName=Email template builder"
-        printf '%s\n' "Comment=Edit MJML email templates in the terminal"
+        printf '%s\n' "Comment=${comment}"
         printf '%s\n' "Exec=${exec_q}"
         printf '%s\n' "TryExec=${try_q}"
         printf '%s\n' "Icon=internet-mail"
-        printf '%s\n' "Terminal=true"
+        printf '%s\n' "Terminal=${terminal}"
         printf '%s\n' "Categories=Office;"
         printf '%s\n' "Keywords=email;mjml;template;"
-        printf '%s\n' "StartupNotify=false"
+        printf '%s\n' "StartupNotify=${startup}"
+        if [ -n "$wmclass" ]; then
+            printf '%s\n' "StartupWMClass=${wmclass}"
+        fi
     } >"$dest"
     chmod 644 "$dest"
 }
@@ -314,39 +430,53 @@ refresh_desktop_database() {
     fi
 }
 
-# Linux application menus launch the TUI in a terminal. Other systems skip
+# Linux menus get one launcher per binary still present. Other systems skip
 # this; the binary install is unchanged.
-install_launcher() {
-    local os dir dest bin
+install_launchers() {
+    local os dir
     os="$(uname -s)"
     if [ "$os" != "Linux" ]; then
-        yellow "Desktop launcher is written on Linux. Skipped on $os."
-        return 0
-    fi
-    bin="$BIN_DIR/$BIN_NAME"
-    if [ ! -x "$bin" ]; then
-        yellow "No executable at $bin — skipped desktop launcher."
+        yellow "Desktop launchers are written on Linux. Skipped on $os."
         return 0
     fi
     dir="$(apps_dir)"
-    dest="$dir/${BIN_NAME}.desktop"
     mkdir -p "$dir"
-    write_desktop "$dest" "$bin"
-    green "Launcher → $dest"
+    if [ -x "$BIN_DIR/$BIN_NAME" ]; then
+        write_desktop \
+            "$dir/${BIN_NAME}.desktop" \
+            "$BIN_DIR/$BIN_NAME" \
+            "dd_emailforge" \
+            "Edit MJML email templates in the terminal" \
+            "true" \
+            "false"
+        green "Launcher → $dir/${BIN_NAME}.desktop"
+    fi
+    if [ -x "$BIN_DIR/$GUI_NAME" ]; then
+        write_desktop \
+            "$dir/${GUI_NAME}.desktop" \
+            "$BIN_DIR/$GUI_NAME" \
+            "dd_emailforge GUI" \
+            "Edit MJML email templates in a window" \
+            "false" \
+            "true" \
+            "$GUI_WMCLASS"
+        green "Launcher → $dir/${GUI_NAME}.desktop"
+    fi
     refresh_desktop_database "$dir"
 }
 
-install_payload() {
-    local src_bin="$1"
-    local src_theme="${2:-}"
-
+install_binary() {
+    local src_bin="$1" name="$2"
     [ -f "$src_bin" ] || { red "Binary not found at $src_bin"; exit 1; }
     chmod +x "$src_bin" 2>/dev/null || true
-
     mkdir -p "$BIN_DIR"
-    install_file 0755 "$src_bin" "$BIN_DIR/$BIN_NAME"
-    green "Installed $BIN_NAME → $BIN_DIR/$BIN_NAME"
+    install_file 0755 "$src_bin" "$BIN_DIR/$name"
+    green "Installed $name → $BIN_DIR/$name"
+}
 
+# Copy the theme only when it is missing. The window install does not call this.
+install_theme_if_missing() {
+    local src_theme="${1:-}"
     mkdir -p "$CONFIG_DIR"
     local theme_dst="$CONFIG_DIR/$THEME_FILE"
     if [ -f "$theme_dst" ]; then
@@ -357,11 +487,24 @@ install_payload() {
     else
         yellow "No $THEME_FILE in the package — using the binary's built-in theme."
     fi
-
     mkdir -p "$LIBRARY_DIR"
     green "Template library dir → $LIBRARY_DIR"
+}
 
-    install_launcher
+install_payload() {
+    local src_bin="$1"
+    local src_theme="${2:-}"
+    install_binary "$src_bin" "$BIN_NAME"
+    install_theme_if_missing "$src_theme"
+}
+
+built_bin() {
+    local repo_root="$1" name="$2"
+    if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+        printf '%s/release/%s\n' "$CARGO_TARGET_DIR" "$name"
+    else
+        printf '%s/target/release/%s\n' "$repo_root" "$name"
+    fi
 }
 
 path_note() {
@@ -374,7 +517,14 @@ path_note() {
             ;;
     esac
     green ""
-    green "Done. Try:  $BIN_NAME"
+    case "${1:-tui}" in
+        gui)  green "Done. Try:  $GUI_NAME" ;;
+        both) green "Done. Try:  $BIN_NAME    or    $GUI_NAME" ;;
+        *)    green "Done. Try:  $BIN_NAME" ;;
+    esac
+    if [ "${1:-tui}" != tui ]; then
+        green "The window needs Vulkan and Wayland or X11."
+    fi
 }
 
 # Download, verify, and install a matching GitHub Release archive into $1.
@@ -461,35 +611,81 @@ clone_source() {
         ref="${REF:-$ver}"
     fi
     workdir="$(mktemp -d)"
-    cyan "Cloning $REPO ($ref)…"
+    cyan "Cloning $REPO ($ref)…" >&2
     git clone --depth 1 --branch "$ref" "https://github.com/${REPO}.git" "$workdir/src"
     printf '%s\n' "$workdir/src"
 }
 
-build_from_source() {
-    local repo_root="$1"
+build_tui_from_source() {
+    local repo_root="$1" src_bin src_theme
     require cargo
-
     [ -f "$repo_root/Cargo.toml" ] || {
         red "No Cargo.toml in $repo_root — cannot build from source."
         exit 1
     }
-
     cyan "Building $BIN_NAME (release)…"
-    (cd "$repo_root" && cargo build --release)
-
-    local src_bin="$repo_root/target/release/$BIN_NAME"
+    (cd "$repo_root" && cargo build --release -p dd_emailforge)
+    src_bin="$(built_bin "$repo_root" "$BIN_NAME")"
     [ -x "$src_bin" ] || { red "Build did not produce $src_bin"; exit 1; }
-
-    local src_theme=""
+    src_theme=""
     [ -f "$repo_root/$THEME_FILE" ] && src_theme="$repo_root/$THEME_FILE"
+    install_binary "$src_bin" "$BIN_NAME"
+    install_theme_if_missing "$src_theme"
+}
 
-    install_payload "$src_bin" "$src_theme"
+build_gui_from_source() {
+    local repo_root="$1" src_bin
+    require cargo
+    [ -f "$repo_root/Cargo.toml" ] || {
+        red "No Cargo.toml in $repo_root — cannot build from source."
+        exit 1
+    }
+    cyan "Building $GUI_NAME (release)…"
+    cyan "The window needs Vulkan and Wayland or X11."
+    (cd "$repo_root" && cargo build --release -p dd_emailforge_gui)
+    src_bin="$(built_bin "$repo_root" "$GUI_NAME")"
+    [ -x "$src_bin" ] || { red "Build did not produce $src_bin"; exit 1; }
+    install_binary "$src_bin" "$GUI_NAME"
+}
+
+# Window-only does not copy or replace the theme. tui and both copy it only
+# when the destination file is missing.
+build_from_source() {
+    local repo_root="$1" target="$2"
+    case "$target" in
+        tui)  build_tui_from_source "$repo_root" ;;
+        gui)  build_gui_from_source "$repo_root" ;;
+        both)
+            build_tui_from_source "$repo_root"
+            build_gui_from_source "$repo_root"
+            ;;
+        *)
+            red "Unknown install target: $target"
+            exit 1
+            ;;
+    esac
 }
 
 # ---- subcommands ------------------------------------------------------------
+take_source_tree() {
+    local repo_root="$1"
+    if [ -n "$repo_root" ]; then
+        printf '%s\n' "$repo_root"
+        return 0
+    fi
+    clone_source
+}
+
+drop_clone() {
+    if [ -n "${CLONE_CLEANUP:-}" ]; then
+        rm -rf "$CLONE_CLEANUP"
+        trap - EXIT
+        CLONE_CLEANUP=""
+    fi
+}
+
 do_install() {
-    local mode="$1" repo_root="" clone_root=""
+    local mode="$1" target="$2" repo_root="" clone_root=""
     repo_root="$(find_repo_root || true)"
 
     if [ "$mode" = auto ]; then
@@ -500,9 +696,27 @@ do_install() {
         fi
     fi
 
+    # Release archives are the terminal app. The window is always built here.
+    if [ "$mode" = release ] && [ "$target" = gui ]; then
+        yellow "The release package is the terminal app. Building the window from source."
+        mode=source
+    fi
+
     if [ "$mode" = release ]; then
         if try_install_prebuilt; then
-            path_note
+            if [ "$target" = both ]; then
+                yellow "The release package is the terminal app. Building the window from source."
+                clone_root="$(take_source_tree "$repo_root")"
+                if [ "$clone_root" != "$repo_root" ]; then
+                    repo_root="$clone_root"
+                    CLONE_CLEANUP="$(dirname "$clone_root")"
+                    trap 'rm -rf "${CLONE_CLEANUP:-}"' EXIT
+                fi
+                build_gui_from_source "$repo_root"
+                drop_clone
+            fi
+            install_launchers
+            path_note "$target"
             return 0
         fi
         if [ "$1" = release ]; then
@@ -521,64 +735,53 @@ do_install() {
         trap 'rm -rf "${CLONE_CLEANUP:-}"' EXIT
     fi
 
-    build_from_source "$repo_root"
-    if [ -n "${CLONE_CLEANUP:-}" ]; then
-        rm -rf "$CLONE_CLEANUP"
-        trap - EXIT
-        CLONE_CLEANUP=""
-    fi
-    path_note
+    build_from_source "$repo_root" "$target"
+    drop_clone
+    install_launchers
+    path_note "$target"
 }
 
 do_uninstall() {
-    local bin_dst="$BIN_DIR/$BIN_NAME"
+    local target="${1:-both}"
     local theme_dst="$CONFIG_DIR/$THEME_FILE"
-    local app_dir="$CONFIG_DIR/dd_emailforge"
     local removed_any=0
+    local apps=""
 
-    if [ -f "$bin_dst" ] || [ -L "$bin_dst" ]; then
-        rm -f "$bin_dst"
-        green "Removed $bin_dst"
-        removed_any=1
-    else
-        yellow "No binary at $bin_dst"
-    fi
+    remove_path() {
+        local path="$1"
+        if [ -f "$path" ] || [ -L "$path" ]; then
+            rm -f "$path"
+            green "Removed $path"
+            removed_any=1
+        else
+            yellow "No file at $path"
+        fi
+    }
+
+    case "$target" in
+        tui) remove_path "$BIN_DIR/$BIN_NAME" ;;
+        gui) remove_path "$BIN_DIR/$GUI_NAME" ;;
+        both)
+            remove_path "$BIN_DIR/$BIN_NAME"
+            remove_path "$BIN_DIR/$GUI_NAME"
+            ;;
+        *)
+            red "Unknown uninstall target: $target"
+            exit 1
+            ;;
+    esac
 
     if [ "$(uname -s)" = "Linux" ]; then
-        local apps dest
         apps="$(apps_dir)"
-        dest="$apps/${BIN_NAME}.desktop"
-        if [ -f "$dest" ] || [ -L "$dest" ]; then
-            rm -f "$dest"
-            green "Removed $dest"
-            removed_any=1
-            refresh_desktop_database "$apps"
-        else
-            yellow "No launcher at $dest"
-        fi
-    fi
-
-    if [ -f "$theme_dst" ] || [ -L "$theme_dst" ]; then
-        rm -f "$theme_dst"
-        green "Removed $theme_dst"
-        removed_any=1
-    else
-        yellow "No theme at $theme_dst"
-    fi
-
-    if [ -d "$LIBRARY_DIR" ] && [ -z "$(ls -A "$LIBRARY_DIR")" ]; then
-        rmdir "$LIBRARY_DIR"
-        green "Removed empty $LIBRARY_DIR"
-    fi
-    if [ -d "$app_dir" ] && [ -z "$(ls -A "$app_dir")" ]; then
-        rmdir "$app_dir"
-        green "Removed empty $app_dir"
-    fi
-
-    # Remove config dir only if empty (don't clobber other tools' files)
-    if [ -d "$CONFIG_DIR" ] && [ -z "$(ls -A "$CONFIG_DIR")" ]; then
-        rmdir "$CONFIG_DIR"
-        green "Removed empty $CONFIG_DIR"
+        case "$target" in
+            tui) remove_path "$apps/${BIN_NAME}.desktop" ;;
+            gui) remove_path "$apps/${GUI_NAME}.desktop" ;;
+            both)
+                remove_path "$apps/${BIN_NAME}.desktop"
+                remove_path "$apps/${GUI_NAME}.desktop"
+                ;;
+        esac
+        refresh_desktop_database "$apps"
     fi
 
     if [ "$removed_any" -eq 0 ]; then
@@ -586,34 +789,53 @@ do_uninstall() {
     else
         green ""
         green "Uninstall complete."
-        if [ -d "$app_dir" ]; then
-            yellow "Left $app_dir in place (saved templates and last-opened path)."
-        fi
     fi
+    yellow "Left $theme_dst in place."
+    yellow "Left saved templates and the last-opened path in place."
 }
 
 # ---- dispatch ---------------------------------------------------------------
-cmd="install"
-mode="auto"
-
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        install)              cmd="install" ;;
-        uninstall|remove)     cmd="uninstall" ;;
-        --from-release|--prebuilt) mode="release" ;;
-        --from-source)        mode="source" ;;
-        -h|--help|help)       usage; exit 0 ;;
-        *)
-            red "Unknown command: $1"
-            usage
-            exit 1
-            ;;
+main() {
+    print_mark
+    local cmd="install"
+    local mode="auto"
+    local target=""
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            install) cmd="install" ;;
+            uninstall|remove|--uninstall) cmd="uninstall" ;;
+            --from-release|--prebuilt) mode="release" ;;
+            --from-source) mode="source" ;;
+            --tui|--gui|--both)
+                if [ -n "$target" ]; then
+                    red "Pass only one of --tui, --gui, or --both."
+                    exit 1
+                fi
+                target="${1#--}"
+                ;;
+            -h|--help|help) usage; exit 0 ;;
+            *)
+                red "Unknown command: $1"
+                usage
+                exit 1
+                ;;
+        esac
+        shift
+    done
+    if [ -z "$target" ] && [ "${INSTALL_GUI:-}" = "1" ]; then
+        target=both
+    fi
+    target="$(choose_target "$cmd" "$target")"
+    case "$cmd" in
+        install) do_install "$mode" "$target" ;;
+        uninstall) do_uninstall "$target" ;;
+        *) red "Unknown command: $cmd"; usage; exit 1 ;;
     esac
-    shift
-done
+}
 
-case "$cmd" in
-    install)          do_install "$mode" ;;
-    uninstall)        do_uninstall ;;
-    *) red "Unknown command: $cmd"; usage; exit 1 ;;
-esac
+# `curl | bash` reads this file from stdin. BASH_SOURCE is unset then, and
+# `set -u` aborts on a bare ${BASH_SOURCE[0]}. An empty source means the
+# file is being executed, not sourced.
+if [[ -z "${BASH_SOURCE[0]:-}" || "${BASH_SOURCE[0]:-}" == "$0" ]]; then
+    main "$@"
+fi

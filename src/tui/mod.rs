@@ -56,6 +56,10 @@ use toasts::*;
 pub(in crate::tui) use modals::{ConfirmKind, ImagePickerState, Modal, ModalResult};
 
 pub(super) const EMPTY_TEMPLATE_HINT: &str = "No template open. n: New   o: Open";
+pub(super) const SETTINGS_THEMES: u8 = 0;
+pub(super) const SETTINGS_HELP: u8 = 1;
+pub(super) const SETTINGS_LAST: u8 = SETTINGS_HELP;
+pub(super) const SETTINGS_NAV: [&str; 2] = ["Themes", "Help"];
 pub(super) const AUTOSAVE_DEBOUNCE: Duration = Duration::from_secs(2);
 const EXPORT_POLL: Duration = Duration::from_millis(50);
 const IDLE_POLL: Duration = Duration::from_secs(3600);
@@ -145,16 +149,19 @@ pub(super) struct App {
     toasts: Vec<Toast>,
     body_area: Rect,
     should_quit: bool,
-    show_help: bool,
     help_scroll: u16,
     help_scroll_max: u16,
+    /// Left-hand section. 0 Themes, 1 Help.
+    settings_nav: u8,
+    /// Draw should keep the highlighted settings row on screen once.
+    settings_follow: bool,
+    /// Last drawn section list. A zero-size rect is inactive.
+    settings_nav_area: Rect,
     show_theme: bool,
     theme_editor: Option<ldnddev_theme::ThemeEditor>,
     theme_picker: Option<ldnddev_theme::ThemePicker>,
     omarchy_paths: ldnddev_theme::OmarchyPaths,
     follow_stamp: Option<String>,
-    theme_scroll: u16,
-    theme_scroll_max: u16,
     theme_status: Option<String>,
     modal: Option<Modal>,
     dirty: bool,
@@ -218,16 +225,16 @@ impl App {
             toasts: Vec::new(),
             body_area: Rect::default(),
             should_quit: false,
-            show_help: false,
             help_scroll: 0,
             help_scroll_max: 0,
+            settings_nav: SETTINGS_THEMES,
+            settings_follow: false,
+            settings_nav_area: Rect::default(),
             show_theme: false,
             theme_editor: None,
             theme_picker: None,
             omarchy_paths,
             follow_stamp,
-            theme_scroll: 0,
-            theme_scroll_max: 0,
             theme_status,
             modal: None,
             dirty: false,
@@ -343,35 +350,24 @@ impl App {
     }
 
     pub(super) fn footer_hint(&self, width: u16) -> String {
-        let compact = width < 80;
-        // Help, theme, and other modals keep a fixed close/quit bar.
-        if self.modal.is_some() || self.show_help || self.show_theme {
-            let parts: &[&str] = if compact {
-                &["F1:Help", "Esc:Close", "C-q:Quit"]
+        let wide = width >= 80;
+        if self.modal.is_some() || self.show_theme {
+            return if wide {
+                "F1: Settings  Esc: Close  Ctrl+Q: Quit".to_string()
             } else {
-                &["F1:Help", "Esc:Close", "Ctrl+Q:Quit"]
+                "F1:Settings  Esc:Close  ^Q:Quit".to_string()
             };
-            return footer_line(self.dirty, parts);
         }
 
         let (head, middle, tail): (&str, &[&str], &str) = if self.template.is_none() {
-            if compact {
-                ("F1:Help", &["n:New", "o:Open"], "C-q:Quit")
+            if wide {
+                ("F1: Settings", &["n: New", "o: Open"], "Ctrl+Q: Quit")
             } else {
-                ("F1: Help", &["n: New", "o: Open"], "Ctrl+Q: Quit")
+                ("F1:Settings", &["n:New", "o:Open"], "^Q:Quit")
             }
-        } else if compact {
+        } else if wide {
             (
-                "F1:Help",
-                &[
-                    "Ent:Edit", "/:Ins", "d:Del", "y:Dup", "JK:Move", "u:Undo", "F3:Val", "p:Prev",
-                    "S+E:Exp", "s:Save", "(mouse)",
-                ],
-                "C-q:Quit",
-            )
-        } else {
-            (
-                "F1: Help",
+                "F1: Settings",
                 &[
                     "Enter: Edit",
                     "/: Insert",
@@ -386,6 +382,15 @@ impl App {
                     "(mouse: click/scroll)",
                 ],
                 "Ctrl+Q: Quit",
+            )
+        } else {
+            (
+                "F1:Settings",
+                &[
+                    "Ent:Edit", "/:Ins", "d:Del", "y:Dup", "JK:Move", "u:Undo", "F3:Val", "p:Prev",
+                    "S+E:Exp", "s:Save", "(mouse)",
+                ],
+                "^Q:Quit",
             )
         };
         fit_footer(width, self.dirty, head, middle, tail)

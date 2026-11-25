@@ -1,7 +1,7 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 
-use super::theme::{AppTheme, color_to_hex};
+use super::theme::AppTheme;
 
 fn wrap_to_lines(text: &str, width: usize) -> Vec<String> {
     let w = width.max(1);
@@ -108,8 +108,9 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         &mut lines,
         "Global",
         &[
-            ("F1", "Open/close this help"),
-            ("F2", "Omarchy themes (Enter apply, e edit, s save)"),
+            ("F1", "Open/close Settings (Themes, then this Help)"),
+            ("Ctrl+Q", "Quit (confirms if unsaved; bare q does not quit)"),
+            ("F2", "Same toggle as F1"),
             ("F3", "Validate; Enter on an error jumps to the node/field"),
             ("n", "New template (starter + folder)"),
             ("o", "Open template.json or a folder"),
@@ -119,7 +120,6 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
                 "Export template.mjml + template.html next to the JSON",
             ),
             ("s", "Save template.json (+ .backup on manual save)"),
-            ("Ctrl+Q", "Quit (confirms if unsaved; bare q does not quit)"),
         ],
         "•",
         h_style,
@@ -130,13 +130,24 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
 
     add_section(
         &mut lines,
-        "Help / Theme overlays",
+        "Settings",
         &[
-            ("F1 / Esc", "Close help"),
-            ("F2 / Esc", "Close theme"),
-            ("j/k or arrows", "Scroll"),
+            ("F1 / F2", "Close Settings and revert unsaved theme edits"),
+            ("Esc", "Close Help, or step back from the color editor"),
+            ("Tab / [ / ]", "Change page"),
+            ("j/k or arrows", "Move the theme row. On Help, this scrolls"),
+            (
+                "Enter",
+                "Apply the highlighted theme, or edit a color's hex",
+            ),
+            ("e", "Edit colors"),
+            ("y / s", "Save the theme"),
+            ("t", "Toggle save target local / global"),
+            (
+                "PageUp / PageDown",
+                "Scroll this page without moving the row",
+            ),
             ("g / G", "Jump to top / bottom"),
-            ("PageUp / PageDown", "Scroll by a page"),
         ],
         "•",
         h_style,
@@ -227,150 +238,4 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
     }
 
     Text::from(lines)
-}
-
-pub(crate) fn build_theme_text(
-    theme: &AppTheme,
-    source: &str,
-    status: &Option<String>,
-    width: usize,
-) -> Text<'static> {
-    let h_style = Style::default()
-        .fg(theme.modal_header)
-        .add_modifier(Modifier::BOLD);
-    let k_style = Style::default().fg(theme.text_active_focus);
-    let div_style = Style::default().fg(theme.text_secondary);
-
-    let mut lines: Vec<Line<'static>> = Vec::new();
-
-    lines.push(Line::from(Span::styled("Theme", h_style)));
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("  App: ", k_style),
-        Span::raw(format!("dd_emailforge v{}", env!("CARGO_PKG_VERSION"))),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Source: ", k_style),
-        Span::raw(format!(
-            "{}   (./dd_emailforge_theme.yml or ~/.config/ldnddev/)",
-            source
-        )),
-    ]));
-    let status_str = status.as_deref().unwrap_or("OK (loaded cleanly)");
-    lines.push(Line::from(vec![
-        Span::styled("  Status: ", k_style),
-        Span::raw(status_str.to_string()),
-    ]));
-    lines.push(Line::from(""));
-
-    let rule_len = width.saturating_sub(4).clamp(12, 50);
-    let rule = "─".repeat(rule_len);
-    lines.push(Line::from(Span::styled(format!("  {}", rule), div_style)));
-    lines.push(Line::from(""));
-
-    lines.push(Line::from(Span::styled(
-        "Loaded color tokens (sampled)",
-        h_style,
-    )));
-    lines.push(Line::from(""));
-
-    let tokens: Vec<(&str, Color, &str)> = vec![
-        ("base_background", theme.base_background, "app_shell base"),
-        ("body_background", theme.body_background, "body panes"),
-        (
-            "modal_background",
-            theme.modal_background,
-            "modals & toasts",
-        ),
-        ("text_primary", theme.text_primary, "primary text"),
-        ("text_secondary", theme.text_secondary, "muted text"),
-        ("text_disabled", theme.text_disabled, "disabled text"),
-        ("text_inverse", theme.text_inverse, "inverted text"),
-        ("text_labels", theme.text_labels, "labels at rest"),
-        ("text_active_focus", theme.text_active_focus, "focus + keys"),
-        ("modal_labels", theme.modal_labels, "modal labels"),
-        ("modal_header", theme.modal_header, "section titles bold"),
-        (
-            "selected_background",
-            theme.selected_background,
-            "selected row",
-        ),
-        ("border_default", theme.border_default, "idle pane border"),
-        ("border_active", theme.border_active, "focused pane border"),
-        (
-            "input_border_default",
-            theme.input_border_default,
-            "idle inputs",
-        ),
-        (
-            "input_border_focus",
-            theme.input_border_focus,
-            "focused inputs",
-        ),
-        (
-            "input_text_default",
-            theme.input_text_default,
-            "idle input text",
-        ),
-        (
-            "input_text_focus",
-            theme.input_text_focus,
-            "focused input text",
-        ),
-        ("cursor", theme.cursor, "input cursor overlay"),
-        ("success", theme.success, "success toasts"),
-        ("warning", theme.warning, "warning toasts"),
-        ("error", theme.error, "error toasts"),
-        ("info", theme.info, "info toasts"),
-        ("folders", theme.folders, "picker folders"),
-        ("files", theme.files, "picker files"),
-        ("links", theme.links, "picker links"),
-        ("scrollbar", theme.scrollbar, "scrollbars"),
-        ("scrollbar_hover", theme.scrollbar_hover, "scrollbar thumb"),
-    ];
-
-    for (name, color, role) in tokens {
-        let hex = color_to_hex(color);
-        let line = format!("  {:<18} {}   ({})", name, hex, role);
-        lines.push(Line::from(Span::raw(line)));
-    }
-
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(format!("  {}", rule), div_style)));
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::raw(
-        "  (All colors from self.theme.*. No hardcodes.)",
-    )));
-
-    Text::from(lines)
-}
-
-pub(crate) fn count_wrapped_lines(text: &Text, _width: usize) -> usize {
-    text.lines.len()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn theme_text_includes_canonical_token_and_source() {
-        let theme = AppTheme::default();
-        let text = build_theme_text(&theme, "local", &None, 80);
-        let joined: String = text
-            .lines
-            .iter()
-            .map(|l| {
-                l.spans
-                    .iter()
-                    .map(|s| s.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(joined.contains("base_background"), "{joined}");
-        assert!(joined.contains("local"), "{joined}");
-        assert!(joined.contains("OK (loaded cleanly)"), "{joined}");
-        assert!(!joined.contains("\nbackground "), "{joined}");
-    }
 }

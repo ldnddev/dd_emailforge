@@ -67,10 +67,17 @@ fn app_with_template() -> App {
 #[test]
 fn f1_opens_and_closes() {
     let mut app = chrome_app();
+    let before = color_to_hex(app.theme.base_background);
     send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
-    assert!(app.show_help);
+    assert!(app.show_theme);
+    assert_eq!(app.settings_nav, 0);
+    assert!(app.theme_editor.is_some());
+    send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+    assert_ne!(color_to_hex(app.theme.base_background), before);
     send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
-    assert!(!app.show_help);
+    assert!(!app.show_theme);
+    assert!(app.theme_editor.is_none());
+    assert_eq!(color_to_hex(app.theme.base_background), before);
 }
 
 #[test]
@@ -78,7 +85,12 @@ fn f2_opens_and_closes_with_f2_and_esc() {
     let mut app = chrome_app();
     send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
     assert!(app.show_theme);
-    assert_eq!(app.theme_scroll, 0);
+    assert_eq!(app.settings_nav, 0);
+    assert_eq!(app.help_scroll, 0);
+    send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+    assert!(!app.show_theme);
+    send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+    assert!(app.show_theme);
     send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     assert!(!app.show_theme);
 }
@@ -119,7 +131,9 @@ fn f2_lists_omarchy_themes_and_esc_reverts() {
         ldnddev_theme::PickerRow::Custom
     ));
     let listed = frame_text(&mut app);
-    assert!(listed.contains("F2 Themes"), "{listed}");
+    assert!(listed.contains("Settings"), "{listed}");
+    assert!(listed.contains("Themes"), "{listed}");
+    assert!(listed.contains("Custom"), "{listed}");
     send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(color_to_hex(app.theme.body_background), before);
     send_key(&mut app, KeyCode::Char('g'), KeyModifiers::NONE);
@@ -129,11 +143,14 @@ fn f2_lists_omarchy_themes_and_esc_reverts() {
     assert!(app.theme_editor.is_some());
     assert!(app.theme_picker.is_some());
     let editing = frame_text(&mut app);
-    assert!(editing.contains("Esc back"), "{editing}");
+    assert!(editing.contains("Enter edit"), "{editing}");
+    assert!(editing.contains("base_background"), "{editing}");
     send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     assert!(app.show_theme);
     assert!(app.theme_editor.is_none());
     assert!(app.theme_picker.is_some());
+    send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(app.settings_nav, super::SETTINGS_HELP);
     send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     assert!(!app.show_theme);
     assert_eq!(color_to_hex(app.theme.body_background), before);
@@ -177,6 +194,94 @@ fn ctrl_q_quits() {
 }
 
 #[test]
+fn ctrl_q_quits_while_settings_is_open() {
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+    assert!(app.show_theme);
+    send_key(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL);
+    assert!(app.should_quit);
+}
+
+#[test]
+fn settings_sheet_leaves_the_body_visible() {
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+    let text = frame_text(&mut app);
+    assert!(text.contains("No template open."), "{text}");
+    assert!(text.contains("Settings"), "{text}");
+    assert!(text.contains("Themes"), "{text}");
+    assert!(text.contains("Help"), "{text}");
+    assert!(
+        !text.contains("F1:Help") && !text.contains("F1: Help"),
+        "{text}"
+    );
+}
+
+#[test]
+fn t_toggles_save_target_and_page_down_keeps_the_row() {
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+    assert_eq!(
+        app.theme_editor.as_ref().unwrap().save_target,
+        ldnddev_theme::ThemeSaveTarget::Global
+    );
+    send_key(&mut app, KeyCode::Char('t'), KeyModifiers::NONE);
+    assert_eq!(
+        app.theme_editor.as_ref().unwrap().save_target,
+        ldnddev_theme::ThemeSaveTarget::Local
+    );
+    let backend = TestBackend::new(80, 16);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw");
+    let selected = app.theme_editor.as_ref().unwrap().selected;
+    send_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE);
+    assert!(app.help_scroll > 0);
+    assert_eq!(app.theme_editor.as_ref().unwrap().selected, selected);
+}
+
+#[test]
+fn footer_sheet_or_modal_names_f1_esc_and_quit() {
+    let mut app = chrome_app();
+    send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+    assert_eq!(app.footer_hint(40), "F1:Settings  Esc:Close  ^Q:Quit");
+    assert_eq!(
+        app.footer_hint(80),
+        "F1: Settings  Esc: Close  Ctrl+Q: Quit"
+    );
+    send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+    send_key(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
+    assert!(app.modal.is_some());
+    assert_eq!(app.footer_hint(79), "F1:Settings  Esc:Close  ^Q:Quit");
+    assert_eq!(
+        app.footer_hint(80),
+        "F1: Settings  Esc: Close  Ctrl+Q: Quit"
+    );
+}
+
+#[test]
+fn uninstall_leaves_the_theme_file() {
+    let script = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/install.sh"))
+        .expect("install.sh");
+    assert!(
+        script.contains("leaves\ndd_emailforge_theme.yml"),
+        "usage should say the theme file stays"
+    );
+    let uninstall = script.split("do_uninstall()").nth(1).expect("do_uninstall");
+    let uninstall = uninstall
+        .split("# ---- dispatch")
+        .next()
+        .expect("uninstall body");
+    assert!(
+        !uninstall.contains("rm -f \"$theme_dst\""),
+        "uninstall must not delete the theme"
+    );
+    assert!(
+        uninstall.contains("Left $theme_dst in place."),
+        "uninstall should say the theme stays"
+    );
+}
+
+#[test]
 fn q_without_modifiers_does_not_quit() {
     let mut app = chrome_app();
     send_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE);
@@ -184,23 +289,24 @@ fn q_without_modifiers_does_not_quit() {
 }
 
 #[test]
-fn footer_hint_starts_with_f1_help_and_ctrl_q() {
+fn footer_hint_starts_with_f1_settings_and_ctrl_q() {
     let app = chrome_app();
     for width in [40u16, 80, 160] {
         let hint = app.footer_hint(width);
         assert!(
-            hint.starts_with("F1:Help") || hint.starts_with("F1: Help"),
+            hint.starts_with("F1:Settings") || hint.starts_with("F1: Settings"),
             "width {width}: {hint}"
         );
         assert!(
-            hint.contains("C-q:Quit") || hint.contains("Ctrl+Q"),
+            hint.contains("^Q:Quit") || hint.contains("Ctrl+Q: Quit"),
             "width {width}: {hint}"
         );
         assert!(
-            !hint.contains("q:Quit")
-                || hint.contains("C-q:Quit")
-                || hint.contains("Ctrl+Q:Quit")
-                || hint.contains("Ctrl+Q: Quit"),
+            !hint.contains("F1:Help") && !hint.contains("F1: Help"),
+            "{hint}"
+        );
+        assert!(
+            !hint.contains("q:Quit") || hint.contains("Ctrl+Q: Quit"),
             "bare q:Quit must not appear, width {width}: {hint}"
         );
         let stripped = hint
@@ -292,7 +398,8 @@ fn draw_smoke_header_is_three_rows() {
 #[test]
 fn draw_help_modal_does_not_panic() {
     let mut app = chrome_app();
-    app.show_help = true;
+    app.show_theme = true;
+    app.settings_nav = super::SETTINGS_HELP;
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).expect("terminal");
     terminal.draw(|f| app.draw(f)).expect("draw help");
@@ -357,21 +464,21 @@ fn key_release_does_not_toggle_help() {
         KeyModifiers::NONE,
         KeyEventKind::Release,
     );
-    assert!(!app.show_help);
+    assert!(!app.show_theme);
     send_key_kind(
         &mut app,
         KeyCode::F(1),
         KeyModifiers::NONE,
         KeyEventKind::Press,
     );
-    assert!(app.show_help);
+    assert!(app.show_theme);
     send_key_kind(
         &mut app,
         KeyCode::F(1),
         KeyModifiers::NONE,
         KeyEventKind::Release,
     );
-    assert!(app.show_help);
+    assert!(app.show_theme);
 }
 
 #[test]
@@ -470,7 +577,7 @@ fn unhandled_keys_and_bound_nav_skip_redraw() {
 fn help_scroll_at_bound_and_unhandled_key_skip_redraw() {
     let mut app = chrome_app();
     send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
-    assert!(app.show_help);
+    assert!(app.show_theme);
     assert_eq!(app.help_scroll, 0);
     assert!(!reports_change(
         &mut app,
@@ -480,7 +587,7 @@ fn help_scroll_at_bound_and_unhandled_key_skip_redraw() {
         &mut app,
         Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
     ));
-    assert!(app.show_help);
+    assert!(app.show_theme);
 }
 
 #[test]
@@ -1596,18 +1703,25 @@ fn footer_drops_low_priority_keys_to_fit() {
             hint.chars().count()
         );
         assert!(
-            hint.starts_with("F1:Help") || hint.starts_with("F1: Help"),
+            hint.starts_with("F1:Settings") || hint.starts_with("F1: Settings"),
             "width {width}: {hint}"
         );
         assert!(
-            hint.ends_with("C-q:Quit") || hint.ends_with("Ctrl+Q: Quit"),
+            !hint.contains("F1:Help") && !hint.contains("F1: Help"),
+            "{hint}"
+        );
+        assert!(
+            hint.ends_with("^Q:Quit") || hint.ends_with("Ctrl+Q: Quit"),
             "width {width}: {hint}"
         );
     }
     let at_100 = app.footer_hint(100);
     assert!(at_100.contains("u: Undo"), "{at_100}");
-    assert!(at_100.contains("F3: Validate"), "{at_100}");
+    assert!(!at_100.contains("F3"), "{at_100}");
     assert!(!at_100.contains("Preview"), "{at_100}");
+    let at_110 = app.footer_hint(110);
+    assert!(at_110.contains("F3: Validate"), "{at_110}");
+    assert!(!at_110.contains("Preview"), "{at_110}");
     let at_120 = app.footer_hint(120);
     assert!(at_120.contains("p: Preview"), "{at_120}");
     assert!(!at_120.contains("Export"), "{at_120}");
@@ -1839,11 +1953,11 @@ fn f1_from_expanded_textarea_keeps_form() {
     let mut app = app_with_mj_text_form();
     send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
     send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
-    assert!(app.show_help);
+    assert!(app.show_theme);
     assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
     assert!(app.form_textarea_expanded);
     send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-    assert!(!app.show_help);
+    assert!(!app.show_theme);
     assert!(app.form_textarea_expanded);
     assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
 }

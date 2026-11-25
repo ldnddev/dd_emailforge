@@ -117,7 +117,7 @@ Always `self.theme.*`. Canonical tokens only. Labels: `text_labels` → `text_ac
 
 ### UX prefs
 
-- Footer is a 1-line adaptive key bar. Always starts with `F1:Help` and ends with `Ctrl+Q`. With a template open the keys, highest priority first, are Edit, Insert, Delete, Duplicate, Move, Undo, Validate, Preview, Export, Save, then the mouse hint. With none open the keys are New and Open. Lower-priority keys drop until the line fits. Help, theme, and other modals keep `F1`, `Esc`, and Quit. No compile status.
+- Footer is a 1-line adaptive key bar. Below 80 columns it starts with `F1:Settings` and ends with `^Q:Quit`. At 80 and wider it starts with `F1: Settings` and ends with `Ctrl+Q: Quit`. With a template open the keys, highest priority first, are Edit, Insert, Delete, Duplicate, Move, Undo, Validate, Preview, Export, Save, then the mouse hint. With none open the keys are New and Open. Lower-priority keys drop until the line fits. While Settings or another modal is open the line is `F1:Settings  Esc:Close  ^Q:Quit` (spaced at 80 and wider). No compile status. F1 and F2 toggle one Settings sheet (Themes, then Help).
 - With no template open, Structure and Details say so and offer `n` / `o`. They do not list HEAD, BRAND, or BODY.
 - FormEdit, the expanded textarea, the insert picker, and the image picker keep save/cancel (or Esc) on their hint line and drop lower-priority keys until that line fits.
 - Quit is `Ctrl+Q` only.
